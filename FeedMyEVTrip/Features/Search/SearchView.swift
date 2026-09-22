@@ -65,12 +65,18 @@ struct SearchView: View {
                 if isShowingStopArea {
                     ForEach(Array(nearbyFood.prefix(3).enumerated()), id: \.offset) { _, food in
                         Annotation(food.name ?? "Food", coordinate: food.location.coordinate) {
-                            Image(systemName: "fork.knife.circle.fill")
-                                .font(.title2)
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(.white, .orange)
-                                .padding(3)
-                                .background(.black.opacity(0.75), in: Circle())
+                            Button {
+                                selectFoodDetails(food)
+                            } label: {
+                                Image(systemName: "fork.knife.circle.fill")
+                                    .font(.title2)
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, .orange)
+                                    .padding(3)
+                                    .background(.black.opacity(0.75), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("View details for \(food.name ?? "food option")")
                         }
                     }
                 }
@@ -345,9 +351,14 @@ struct SearchView: View {
         guard let food = nearbyFood.first(where: { foodIdentifier($0) == summary.id }) else {
             return
         }
+        selectFoodDetails(food)
+    }
+
+    private func selectFoodDetails(_ food: MKMapItem) {
+        guard let selectedCharger else { return }
         selectedFoodDetails = SelectedFood(
             mapItem: food,
-            distanceAndWalk: summary.distanceAndWalk
+            distanceAndWalk: walkingEstimate(from: selectedCharger, to: food)
         )
     }
 
@@ -364,8 +375,11 @@ struct SearchView: View {
         guard let selectedCharger, !nearbyFood.isEmpty else { return }
         overviewRegion = visibleRegion
 
-        let walkingRadius = CLLocationDistance(maximumWalkingMinutes * 80)
-        let visibleDiameter = max(walkingRadius * 2.4, 800)
+        let furthestDisplayedDistance = nearbyFood
+            .prefix(3)
+            .map { selectedCharger.mapItem.location.distance(from: $0.location) }
+            .max() ?? 200
+        let visibleDiameter = max(furthestDisplayedDistance * 2, 400)
         let stopAreaRegion = MKCoordinateRegion(
             center: selectedCharger.coordinate,
             latitudinalMeters: visibleDiameter,
