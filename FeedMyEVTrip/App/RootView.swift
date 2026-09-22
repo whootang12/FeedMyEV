@@ -13,6 +13,11 @@ struct RootView: View {
                 .tabItem {
                     Label("Saved", systemImage: "bookmark")
                 }
+
+            FoodPreferencesView()
+                .tabItem {
+                    Label("Preferences", systemImage: "slider.horizontal.3")
+                }
         }
     }
 }

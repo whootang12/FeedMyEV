@@ -8,7 +8,8 @@ struct StopSummary {
     let foodOptions: [FoodSummary]
 }
 
-struct FoodSummary {
+struct FoodSummary: Identifiable {
+    let id: String
     let name: String
     let distanceAndWalk: String
 }
@@ -16,13 +17,20 @@ struct FoodSummary {
 enum StopPanelState {
     case welcome
     case message(String)
-    case selected(stop: StopSummary, isLoadingFood: Bool, isSaved: Bool)
+    case selected(
+        stop: StopSummary,
+        isLoadingFood: Bool,
+        isSaved: Bool,
+        isShowingStopArea: Bool
+    )
 }
 
 struct StopResultPanel: View {
     let state: StopPanelState
     var onSave: () -> Void = {}
     var onDirections: () -> Void = {}
+    var onToggleMapDetail: () -> Void = {}
+    var onSelectFood: (FoodSummary) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -32,8 +40,13 @@ struct StopResultPanel: View {
             case .message(let message):
                 Label(message, systemImage: "magnifyingglass")
                     .font(.subheadline)
-            case .selected(let stop, let isLoadingFood, let isSaved):
-                selectedContent(stop, isLoadingFood: isLoadingFood, isSaved: isSaved)
+            case .selected(let stop, let isLoadingFood, let isSaved, let isShowingStopArea):
+                selectedContent(
+                    stop,
+                    isLoadingFood: isLoadingFood,
+                    isSaved: isSaved,
+                    isShowingStopArea: isShowingStopArea
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -55,7 +68,8 @@ struct StopResultPanel: View {
     private func selectedContent(
         _ stop: StopSummary,
         isLoadingFood: Bool,
-        isSaved: Bool
+        isSaved: Bool,
+        isShowingStopArea: Bool
     ) -> some View {
         Label("Charging stop", systemImage: "bolt.fill")
             .font(.caption.weight(.semibold))
@@ -73,29 +87,50 @@ struct StopResultPanel: View {
             ProgressView("Checking nearby food…")
                 .font(.subheadline)
         } else if stop.foodOptions.isEmpty {
-            Text("No nearby food found within about a mile.")
+            Text("No nearby food found within your walking range.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         } else {
-            Text("\(stop.foodOptions.count) food options found within about a mile")
+            Text("\(stop.foodOptions.count) food options found within your walking range")
                 .font(.subheadline)
 
-            ForEach(Array(stop.foodOptions.prefix(3).enumerated()), id: \.offset) { _, food in
-                HStack(spacing: 8) {
-                    Image(systemName: "fork.knife")
-                        .foregroundStyle(.orange)
+            ForEach(stop.foodOptions.prefix(3)) { food in
+                Button {
+                    onSelectFood(food)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "fork.knife")
+                            .foregroundStyle(.orange)
 
-                    Text(food.name)
-                        .font(.subheadline.weight(.medium))
-                        .lineLimit(1)
+                        Text(food.name)
+                            .font(.subheadline.weight(.medium))
+                            .lineLimit(1)
 
-                    Spacer()
+                        Spacer()
 
-                    Text(food.distanceAndWalk)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        Text(food.distanceAndWalk)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
+        }
+
+        if !isLoadingFood && !stop.foodOptions.isEmpty {
+            Button(action: onToggleMapDetail) {
+                Label(
+                    isShowingStopArea ? "Back to area" : "Show charger and food on map",
+                    systemImage: isShowingStopArea ? "arrow.down.right.and.arrow.up.left" : "map"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
         }
 
         HStack {
