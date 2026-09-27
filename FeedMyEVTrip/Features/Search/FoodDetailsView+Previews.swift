@@ -1,4 +1,5 @@
 import MapKit
+import SwiftData
 import SwiftUI
 
 #Preview("Food details") {
@@ -7,6 +8,7 @@ import SwiftUI
         charger: previewChargerItem(),
         distanceAndWalk: "760 ft · ~4 min walk"
     )
+    .modelContainer(for: SavedStore.modelTypes, inMemory: true)
 }
 
 private func previewChargerItem() -> MKMapItem {

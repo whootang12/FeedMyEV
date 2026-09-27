@@ -4,7 +4,7 @@ Status: Implemented
 
 Code: `FeedMyEVTrip/Features/Search/FoodDetailsView.swift`
 
-The food sheet shows the walking estimate, address, phone, and website when MapKit provides them, plus links to other apps.
+The food sheet shows the walking estimate, address, phone, and website when MapKit provides them, plus links to other apps. Saving a chain, a location, and a location note is specified in [saved restaurants](saved-restaurants.md).
 
 ## Requirements
 

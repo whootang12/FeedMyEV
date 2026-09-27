@@ -31,11 +31,12 @@ Each feature has its own file. Folders group related features. These notes are t
 - [Food preferences](food/food-preferences.md)
 - [Nearby food](food/nearby-food.md)
 - [Food details](food/food-details.md)
-- [Personalized food](food/personalized-food.md) — planned
+- [Saved restaurants](food/saved-restaurants.md) — partial
+- [Personalized food](food/personalized-food.md) — partial
 - [Food-aware recommendations](food/food-aware-recommendations.md) — planned
 - [Walking routes](food/walking-routes.md) — planned
 
 ### Saved stops
 
 - [Saved stops](saved-stops/saved-stops.md)
-- [Notes and tags](saved-stops/notes-and-tags.md) — planned
+- [Notes and tags](saved-stops/notes-and-tags.md) — partial

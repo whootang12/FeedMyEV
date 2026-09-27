@@ -24,5 +24,5 @@ struct RootView: View {
 
 #Preview {
     RootView()
-        .modelContainer(for: SavedStop.self, inMemory: true)
+        .modelContainer(for: SavedStore.modelTypes, inMemory: true)
 }

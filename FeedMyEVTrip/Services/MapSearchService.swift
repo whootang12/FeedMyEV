@@ -161,6 +161,27 @@ final class MapSearchService: ObservableObject {
         return places.map(\.searchPlace)
     }
 
+    func place(named name: String, near coordinate: CLLocationCoordinate2D) async throws -> MKMapItem? {
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = name
+        request.resultTypes = .pointOfInterest
+        request.region = MKCoordinateRegion(
+            center: coordinate,
+            latitudinalMeters: 2_000,
+            longitudinalMeters: 2_000
+        )
+        let response = try await execute(request: request)
+        let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        let nearby = response.mapItems.filter { origin.distance(from: $0.location) <= 2_000 }
+        if let match = nearby.first(where: { item in
+            item.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+                .localizedCaseInsensitiveCompare(name) == .orderedSame
+        }) {
+            return match
+        }
+        return nearby.first
+    }
+
     private func execute(request: MKLocalSearch.Request) async throws -> MKLocalSearch.Response {
         try await executeSearch { MKLocalSearch(request: request) }
     }

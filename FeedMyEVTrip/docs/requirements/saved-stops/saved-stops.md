@@ -4,7 +4,7 @@ Status: Implemented
 
 Code: `FeedMyEVTrip/Models/SavedStop.swift`, `FeedMyEVTrip/Features/Saved/SavedStopsView.swift`, `FeedMyEVTrip/Features/Saved/SavedStopDetailsView.swift`, `FeedMyEVTrip/Features/Search/SearchView.swift`
 
-A saved stop is a charger the user keeps on this device, with the food names that were nearby at save time.
+A saved stop is a charger the user keeps on this device, with the food names that were nearby at save time. The Saved tab also lists saved restaurants, specified in [saved restaurants](../food/saved-restaurants.md). Charger notes are specified in [notes and tags](notes-and-tags.md).
 
 ## Requirements
 
@@ -22,11 +22,11 @@ The Saved tab lists stops newest first. The list can be deleted from. An empty l
 
 ### R4. Map and details
 
-The map shows each saved charger. Choosing one from the list or the map opens details with the name, address when present, save date, driving directions, an Apple Maps link, and the saved food names. Driving directions open Apple Maps in driving mode toward the charger.
+The map shows each saved charger. Choosing one from the list or the map opens details with the name, address when present, save date, driving directions, an Apple Maps link, and the saved food names. Each food name opens [food details](../food/food-details.md) for that place. Driving directions open Apple Maps in driving mode toward the charger.
 
 ### R5. Food snapshot
 
-Saved food names are the names captured at save time. They are not refreshed when the catalog or nearby restaurants change.
+Saved food names are the names captured at save time, along with each place’s coordinate, address, phone, and website when MapKit provided them. They are not refreshed when the catalog or nearby restaurants change. A save that has only a name looks up that place near the charger when it is opened.
 
 ### R6. Route inclusion
 
@@ -43,7 +43,7 @@ Saved chargers are candidates in [route search](../search/route-search.md). They
 | TC5 | R2 | Integration | A charger is already saved | Save is tapped again | The store still has one record |
 | TC6 | R3 | Unit | Stops were saved on March 1 and March 3 | The list is loaded | March 3 is first |
 | TC7 | R3 | Integration | One stop exists | It is deleted | The empty state is shown |
-| TC8 | R4 | Integration | A saved stop has an address and two food names | Details are opened | The name, address, date, food names, and both map actions are available |
+| TC8 | R4 | Integration | A saved stop has an address and two food names | Details are opened | The name, address, date, food names, and both map actions are available, and each food name can open food details |
 | TC9 | R5 | Unit | Food names were saved, then the live nearby list changes | The saved stop is read | The stored names are unchanged |
 | TC10 | R6 | Unit | A saved charger is outside the route corridor but inside the time window and detour after driving checks | Route candidates are built | It is still checked, and it appears only if the driving checks pass |
 

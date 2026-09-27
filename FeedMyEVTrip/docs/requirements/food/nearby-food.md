@@ -22,7 +22,7 @@ The search uses the categories from [food preferences](food-preferences.md).
 
 ### R4. Order
 
-Remaining places are ordered by increasing straight-line distance from the charger.
+Remaining places are ordered by increasing straight-line distance from the charger. When a saved chain matches, [saved restaurants](saved-restaurants.md) moves those places ahead of the others and keeps distance order inside each group.
 
 ### R5. Walking estimate
 

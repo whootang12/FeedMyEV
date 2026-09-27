@@ -6,6 +6,6 @@ import SwiftData
         WindowGroup {
             RootView()
         }
-        .modelContainer(for: SavedStop.self)
+        .modelContainer(for: SavedStore.modelTypes)
     }
 }

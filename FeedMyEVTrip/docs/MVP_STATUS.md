@@ -30,15 +30,17 @@ Find a useful EV charging stop along a drive, within a chosen time or distance w
 - Persistent food-category and maximum-walking-time preferences.
 - Persistent CCS, NACS, and CHAdeMO preferences, applied to nearby and route searches.
 - Food details with available address, phone, website, and links to Apple Maps, Google Maps, and Yelp.
+- Saved restaurant chains and specific locations, with one note per location.
+- Nearby food lists saved chains ahead of other places within walking range.
 - Charger/food map focus and Apple Maps driving navigation.
 
 
 
 ### Saved stops
 
-- Local persistence of saved chargers, save date, location, and nearby food names.
+- Local persistence of saved chargers, save date, location, nearby food names, and one note.
 - Saved List/Map views, newest-first list order, removal, and directions.
-- Details pages accessible from the saved list and map.
+- Details pages accessible from the saved list and map. Each saved nearby restaurant opens food details.
 - Saved chargers included as route-search candidates and checked against the stop window and detour allowance.
 - Distinct bookmark icons and labels for saved chargers in search results.
 
@@ -60,10 +62,10 @@ Find a useful EV charging stop along a drive, within a chosen time or distance w
 | Area                            | Remaining work                                                                                                                                                                                                                                            |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Charger data and preferences    | AFDC provider interface, station IDs, connector metadata, network names, DC-fast port counts, and CCS/NACS/CHAdeMO preferences are built. Add reliable power verification, vehicle/access compatibility beyond connector type, and filtering for compatible 150+ kW chargers. |
-| Personalized food preferences   | Save preferred restaurant chains and cuisines and use them in food searches.                                                                                                                                                                              |
+| Personalized food preferences   | Saved chains are stored and preferred in nearby food. Add cuisines, and a way to search for a saved chain by name.                                                                                                                                         |
 | Food-aware stop recommendations | Check food matches before presenting recommended stops. Currently, food is loaded only after selecting a charger.                                                                                                                                         |
 | Walking directions              | Replace straight-line distance/time estimates with actual walking routes and travel times; apply the walking limit to those routes.                                                                                                                       |
-| Favorite notes and tags         | Add editable, persistent notes and tags to saved chargers.                                                                                                                                                                                                |
+| Favorite notes and tags         | Charger and restaurant-location notes are saved. Add tags on saved chargers.                                                                                                                                                                               |
 | Real-world validation           | Test familiar routes and on-device use, charger coverage, detour accuracy, saved-stop inclusion, walking access, search throttling, cancellation, and the redesigned search panel.                                                                        |
 | Cache                           | Speed this up and prevent repeated searches                                                                                                                                                                                                               |
 | Automated Testing               | Requirements and test-case IDs are in `docs/requirements/`. Write unit tests from those IDs.                                                                                                                                                             |
@@ -80,6 +82,7 @@ Find a useful EV charging stop along a drive, within a chosen time or distance w
 - Driving estimates can change. Detours exclude charging and meal time.
 - Walking times are straight-line estimates rather than verified pedestrian routes.
 - Saved food names are a snapshot from when a charger was saved.
+- A saved chain matches the restaurant’s place name. “Wawa #12” does not match a saved “Wawa.”
 
 
 
@@ -109,5 +112,5 @@ Find a useful EV charging stop along a drive, within a chosen time or distance w
 1. Reliable charger data and compatibility preferences.
 2. Personalized food matching and real walking directions.
 3. Food-aware route recommendations.
-4. Favorite notes/tags and real-world validation before calling the MVP complete.
+4. Charger tags and real-world validation before calling the MVP complete.
 

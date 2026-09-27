@@ -1,4 +1,5 @@
 import MapKit
+import SwiftData
 import SwiftUI
 
 struct SelectedFood: Identifiable {
@@ -11,10 +12,16 @@ struct SelectedFood: Identifiable {
 struct FoodDetailsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.modelContext) private var modelContext
+    @Query private var savedChains: [SavedRestaurantChain]
+    @Query private var savedLocations: [SavedRestaurantLocation]
 
     let food: MKMapItem
     let charger: MKMapItem
     let distanceAndWalk: String
+
+    @State private var noteDraft = ""
+    @State private var isSyncingNote = false
 
     var body: some View {
         NavigationStack {
@@ -35,6 +42,38 @@ struct FoodDetailsView: View {
                             Label("Website", systemImage: "safari")
                         }
                     }
+                }
+
+                Section {
+                    Button(action: toggleChain) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(isChainSaved ? "Saved chain" : "Save chain")
+                                if let chainName {
+                                    Text(chainName)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        } icon: {
+                            Image(systemName: isChainSaved ? "bookmark.fill" : "bookmark")
+                        }
+                    }
+                    .disabled(chainName == nil)
+
+                    Button(action: toggleLocation) {
+                        Label(
+                            isLocationSaved ? "Saved location" : "Save this location",
+                            systemImage: isLocationSaved ? "mappin.circle.fill" : "mappin.circle"
+                        )
+                    }
+
+                    TextField("Notes", text: $noteDraft, axis: .vertical)
+                        .lineLimit(3...8)
+                } header: {
+                    Text("Save")
+                } footer: {
+                    Text("A saved chain matches this restaurant’s name wherever it appears. Notes belong to this location.")
                 }
 
                 Section("More details") {
@@ -66,7 +105,30 @@ struct FoodDetailsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .onAppear {
+                replaceNoteDraft(matchingLocation()?.note ?? "")
+            }
+            .onChange(of: noteDraft) { _, newValue in
+                if isSyncingNote {
+                    isSyncingNote = false
+                    return
+                }
+                persistLocationNote(newValue)
+            }
         }
+    }
+
+    private var chainName: String? {
+        let trimmed = food.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var isChainSaved: Bool {
+        savedChains.contains { $0.matches(placeName: food.name) }
+    }
+
+    private var isLocationSaved: Bool {
+        savedLocations.contains { matchesCurrentPlace($0) }
     }
 
     private var address: String {
@@ -74,6 +136,81 @@ struct FoodDetailsView: View {
             includingRegion: true,
             singleLine: true
         ) ?? food.address?.fullAddress ?? "Address unavailable"
+    }
+
+    private func toggleChain() {
+        guard let chainName else { return }
+        let matches = fetchedChains().filter { $0.matches(placeName: chainName) }
+        if matches.isEmpty {
+            modelContext.insert(SavedRestaurantChain(name: chainName))
+        } else {
+            matches.forEach(modelContext.delete)
+        }
+    }
+
+    private func toggleLocation() {
+        let matches = fetchedLocations().filter(matchesCurrentPlace)
+        if matches.isEmpty {
+            modelContext.insert(makeLocation(note: noteDraft))
+        } else {
+            matches.forEach(modelContext.delete)
+            replaceNoteDraft("")
+        }
+    }
+
+    private func persistLocationNote(_ text: String) {
+        if let location = fetchedLocations().first(where: matchesCurrentPlace) {
+            if location.note != text { location.note = text }
+            return
+        }
+        guard !text.isEmpty else { return }
+        modelContext.insert(makeLocation(note: text))
+    }
+
+    private func replaceNoteDraft(_ text: String) {
+        guard noteDraft != text else { return }
+        isSyncingNote = true
+        noteDraft = text
+    }
+
+    private func matchesCurrentPlace(_ location: SavedRestaurantLocation) -> Bool {
+        location.matches(
+            placeIdentifier: food.identifier?.rawValue,
+            latitude: food.location.coordinate.latitude,
+            longitude: food.location.coordinate.longitude
+        )
+    }
+
+    private func makeLocation(note: String) -> SavedRestaurantLocation {
+        let trimmedName = food.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return SavedRestaurantLocation(
+            name: trimmedName.isEmpty ? "Restaurant" : trimmedName,
+            address: storedAddress,
+            latitude: food.location.coordinate.latitude,
+            longitude: food.location.coordinate.longitude,
+            mapItemIdentifier: food.identifier?.rawValue,
+            note: note
+        )
+    }
+
+    private var storedAddress: String {
+        let formatted = food.addressRepresentations?.fullAddress(
+            includingRegion: true,
+            singleLine: true
+        ) ?? food.address?.fullAddress ?? ""
+        return formatted == "Address unavailable" ? "" : formatted
+    }
+
+    private func fetchedChains() -> [SavedRestaurantChain] {
+        (try? modelContext.fetch(FetchDescriptor<SavedRestaurantChain>())) ?? []
+    }
+
+    private func fetchedLocations() -> [SavedRestaurantLocation] {
+        (try? modelContext.fetch(FetchDescriptor<SavedRestaurantLocation>())) ?? []
+    }
+
+    private func matchingLocation() -> SavedRestaurantLocation? {
+        fetchedLocations().first(where: matchesCurrentPlace)
     }
 
     private func phoneURL(_ phoneNumber: String) -> URL {
