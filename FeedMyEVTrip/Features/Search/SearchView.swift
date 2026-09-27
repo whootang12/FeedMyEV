@@ -25,6 +25,8 @@ struct SearchView: View {
     private var includesBakeries = true
     @State private var cameraPosition: MapCameraPosition
     @State private var destination = ""
+    @State private var showsRoutePlanner = false
+    @State private var routeResults: RouteStopResults?
     @State private var chargers: [ChargerResult] = []
     @State private var selectedCharger: ChargerResult?
     @State private var nearbyFood: [MKMapItem] = []
@@ -48,6 +50,10 @@ struct SearchView: View {
         NavigationStack {
             Map(position: $cameraPosition) {
                 UserAnnotation()
+                if let routeResults {
+                    MapPolyline(routeResults.route.polyline)
+                        .stroke(.blue, lineWidth: 5)
+                }
 
                 ForEach(chargers) { charger in
                     Annotation(charger.name, coordinate: charger.coordinate) {
@@ -102,7 +108,7 @@ struct SearchView: View {
                 }
             }
             .overlay(alignment: .top) {
-                if showsSearchHere && !isSearching && !isShowingStopArea {
+                if showsSearchHere && !isSearching && !isShowingStopArea && routeResults == nil {
                     Button(action: searchVisibleRegion) {
                         Label("Search Here", systemImage: "magnifyingglass")
                             .font(.subheadline.weight(.semibold))
@@ -156,16 +162,36 @@ struct SearchView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                StopResultPanel(
-                    state: panelState,
-                    onSave: saveSelectedCharger,
-                    onDirections: openSelectedChargerDirections,
-                    onToggleMapDetail: toggleMapDetail,
-                    onSelectFood: selectFoodDetails
-                )
+                VStack(spacing: 0) {
+                    if let routeResults, !isShowingStopArea {
+                        routeResultsPanel(routeResults)
+                    }
+                    StopResultPanel(
+                        state: panelState,
+                        onSave: saveSelectedCharger,
+                        onDirections: openSelectedChargerDirections,
+                        onToggleMapDetail: toggleMapDetail,
+                        onSelectFood: selectFoodDetails
+                    )
+                }
             }
             .navigationTitle("Feed My EV Trip")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        cancelActiveSearches()
+                        isSearching = false
+                        isLoadingFood = false
+                        showsRoutePlanner = true
+                    } label: {
+                        Label("Find My Stop", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                    }
+                }
+            }
+            .sheet(isPresented: $showsRoutePlanner) {
+                FindMyStopView(destination: destination, onResults: showRouteResults)
+            }
             .searchable(
                 text: $destination,
                 placement: .navigationBarDrawer(displayMode: .always),
@@ -198,6 +224,71 @@ struct SearchView: View {
         }
     }
 
+    private func showRouteResults(_ results: RouteStopResults) {
+        cancelActiveSearches()
+        routeResults = results
+        destination = results.destinationName
+        chargers = results.stops.map(\.charger)
+        selectedCharger = nil
+        nearbyFood = []
+        isSearching = false
+        isLoadingFood = false
+        isShowingStopArea = false
+        overviewRegion = nil
+        showsSearchHere = false
+        suppressesNextCameraPrompt = true
+        message = results.stops.isEmpty
+            ? "No matching stops found. Try a wider window or a larger detour allowance."
+            : "Select a stop to check nearby food and save it."
+        let rect = results.route.polyline.boundingMapRect
+        cameraPosition = .rect(rect.insetBy(dx: -rect.width * 0.12, dy: -rect.height * 0.12))
+    }
+
+    private func routeResultsPanel(_ results: RouteStopResults) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("To \(results.destinationName)")
+                    .font(.headline).lineLimit(1)
+                Spacer()
+                Button("Edit") { showsRoutePlanner = true }
+                Button("Clear") {
+                    cancelActiveSearches()
+                    routeResults = nil
+                    chargers = []
+                    selectedCharger = nil
+                    nearbyFood = []
+                    isLoadingFood = false
+                    message = nil
+                }
+            }
+            Text("\(Int((results.route.distance / 1609.344).rounded())) mi · \(Int((results.route.expectedTravelTime / 60).rounded())) min drive · \(results.stops.count) stops")
+                .font(.caption).foregroundStyle(.secondary)
+            if !results.stops.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack {
+                        ForEach(results.stops) { stop in
+                            Button { select(stop.charger) } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(stop.charger.name).font(.subheadline.bold()).lineLimit(1)
+                                    Text(stop.summary).font(.caption)
+                                }
+                                .padding(10)
+                                .background(selectedCharger?.id == stop.id ? Color.green.opacity(0.2) : Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            if let notice = results.notice, selectedCharger == nil {
+                Text(notice).font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.regularMaterial)
+    }
+
     private var panelState: StopPanelState {
         guard let selectedCharger else {
             return message.map(StopPanelState.message) ?? .welcome
@@ -228,6 +319,7 @@ struct SearchView: View {
         guard !trimmedDestination.isEmpty else { return }
 
         cancelActiveSearches()
+        routeResults = nil
         isSearching = true
         message = nil
         chargers = []
@@ -269,6 +361,7 @@ struct SearchView: View {
 
     private func searchVisibleRegion() {
         guard let visibleRegion else { return }
+        routeResults = nil
 
         cancelActiveSearches()
         showsSearchHere = false
@@ -291,6 +384,7 @@ struct SearchView: View {
 
     private func centerOnCurrentLocation() {
         guard let location = locationService.location else { return }
+        routeResults = nil
 
         let region = MKCoordinateRegion(
             center: location.coordinate,
