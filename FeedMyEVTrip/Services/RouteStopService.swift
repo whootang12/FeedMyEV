@@ -15,6 +15,8 @@ struct RouteStop: Identifiable {
 
 struct RouteStopResults {
     let route: MKRoute
+    let stopSegment: MKPolyline
+    let windowDescription: String
     let stops: [RouteStop]
     let destinationName: String
     let startCoordinate: CLLocationCoordinate2D
@@ -189,7 +191,15 @@ final class RouteStopService: ObservableObject {
         var notices = ["Driving estimates can change. Detours exclude charging and meal time."]
         if failures > 0 { notices.append("Some areas or driving estimates were unavailable; results may be incomplete.") }
         if unsavedCandidates.count > 12 || end - start > 108_000 { notices.append("A selection of route areas and nearby chargers was checked. Narrow the window for a more focused search.") }
-        return RouteStopResults(route: route, stops: stops.sorted { $0.detourMinutes < $1.detourMinutes },
+        let segmentStart = geometry.length * min(1, window.lower / total)
+        let segmentEnd = geometry.length * min(1, window.upper / total)
+        let segmentCoordinates = (0...100).map { index in
+            geometry.coordinate(at: segmentStart + (segmentEnd - segmentStart) * Double(index) / 100)
+        }
+        return RouteStopResults(route: route,
+                                stopSegment: MKPolyline(coordinates: segmentCoordinates, count: segmentCoordinates.count),
+                                windowDescription: "\(Int(window.lower))–\(Int(window.upper)) \(window.unit.rawValue.lowercased()) ahead · Max detour \(Int(maximumDetour)) min",
+                                stops: stops.sorted { $0.detourMinutes < $1.detourMinutes },
                                 destinationName: destination.mapItem.name ?? destinationQuery,
                                 startCoordinate: origin.location.coordinate,
                                 destinationCoordinate: destination.mapItem.location.coordinate,

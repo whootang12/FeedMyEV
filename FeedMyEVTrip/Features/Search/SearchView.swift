@@ -25,7 +25,19 @@ struct SearchView: View {
     private var includesBakeries = true
     @State private var cameraPosition: MapCameraPosition
     @State private var destination = ""
-    @State private var showsRoutePlanner = false
+    @State private var routeDestination = ""
+    @State private var resultAreaName = "your location"
+    @State private var isEditingSearch = true
+    @State private var searchMode = SearchMode.route
+    @State private var panelSize = PanelSize.medium
+    @State private var hasSearched = false
+    @State private var waitingForNearbyLocation = false
+    @State private var resultsRegion: MKCoordinateRegion?
+
+    private enum SearchMode: String, CaseIterable {
+        case route = "Along a route", nearby = "Near a place"
+    }
+    private enum PanelSize { case compact, medium, expanded }
     @State private var routeResults: RouteStopResults?
     @State private var chargers: [ChargerResult] = []
     @State private var selectedCharger: ChargerResult?
@@ -47,195 +59,230 @@ struct SearchView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Map(position: $cameraPosition) {
-                UserAnnotation()
-                if let routeResults {
-                    MapPolyline(routeResults.route.polyline)
-                        .stroke(.blue, lineWidth: 5)
-                    Marker("Start", systemImage: "play.fill", coordinate: routeResults.startCoordinate)
-                        .tint(.blue)
-                    Marker(
-                        "Destination: \(routeResults.destinationName)",
-                        systemImage: "flag.checkered",
-                        coordinate: routeResults.destinationCoordinate
-                    )
-                    .tint(.red)
-                }
-
-                ForEach(chargers) { charger in
-                    Annotation(charger.name, coordinate: charger.coordinate) {
-                        Button {
-                            select(charger)
-                        } label: {
-                            Image(systemName: isSaved(charger)
-                                  ? (selectedCharger?.id == charger.id ? "bookmark.circle.fill" : "bookmark.circle")
-                                  : (selectedCharger?.id == charger.id ? "bolt.circle.fill" : "bolt.circle"))
-                                .font(.title)
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(.white, isSaved(charger) ? .purple : .green)
-                                .padding(4)
-                                .background(.black.opacity(0.75), in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Select \(isSaved(charger) ? "saved charger " : "")\(charger.name)")
-                    }
-                }
-
-                if isShowingStopArea {
-                    ForEach(Array(nearbyFood.prefix(3).enumerated()), id: \.offset) { _, food in
-                        Annotation(food.name ?? "Food", coordinate: food.location.coordinate) {
-                            Button {
-                                selectFoodDetails(food)
-                            } label: {
-                                Image(systemName: "fork.knife.circle.fill")
-                                    .font(.title2)
-                                    .symbolRenderingMode(.palette)
-                                    .foregroundStyle(.white, .orange)
-                                    .padding(3)
-                                    .background(.black.opacity(0.75), in: Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("View details for \(food.name ?? "food option")")
-                        }
-                    }
-                }
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                mapView
+                searchPanel
+                    .frame(height: panelHeight(available: geometry.size.height))
+                    .background(.regularMaterial)
+                    .clipShape(UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24))
             }
-            .mapStyle(.standard(pointsOfInterest: .including([.evCharger, .restaurant, .cafe])))
-            .mapControls {
-                MapCompass()
-                MapScaleView()
-            }
-            .onMapCameraChange(frequency: .onEnd) { context in
-                visibleRegion = context.region
-
-                if suppressesNextCameraPrompt {
-                    suppressesNextCameraPrompt = false
-                } else {
-                    showsSearchHere = true
-                }
-            }
-            .overlay(alignment: .top) {
-                if showsSearchHere && !isSearching && !isShowingStopArea && routeResults == nil {
-                    Button(action: searchVisibleRegion) {
-                        Label("Search Here", systemImage: "magnifyingglass")
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .contentShape(Capsule())
-                            .background(.regularMaterial, in: Capsule())
-                            .shadow(radius: 4, y: 2)
-                    }
-                    .buttonStyle(.plain)
-                    .contentShape(Capsule())
-                    .zIndex(10)
-                    .padding(.top, 12)
-                }
-            }
-            .overlay(alignment: .topLeading) {
-                if isShowingStopArea {
-                    Button(action: toggleMapDetail) {
-                        Label("Back to area", systemImage: "chevron.backward")
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(.regularMaterial, in: Capsule())
-                            .shadow(radius: 4, y: 2)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 12)
-                    .padding(.leading, 12)
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                if !isShowingStopArea {
-                    Button(action: locationService.requestCurrentLocation) {
-                        Image(systemName: "location.fill")
-                            .font(.headline)
-                            .padding(11)
-                            .background(.regularMaterial, in: Circle())
-                            .shadow(radius: 4, y: 2)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Search near my location")
-                    .padding(.top, 12)
-                    .padding(.trailing, 12)
-                }
-            }
-            .overlay {
-                if isSearching {
-                    ProgressView("Finding charging stops…")
-                        .padding()
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-                }
-            }
-            .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 0) {
-                    if let routeResults, !isShowingStopArea {
-                        routeResultsPanel(routeResults)
-                    }
-                    StopResultPanel(
-                        state: panelState,
-                        onSave: saveSelectedCharger,
-                        onDirections: openSelectedChargerDirections,
-                        onToggleMapDetail: toggleMapDetail,
-                        onSelectFood: selectFoodDetails
-                    )
-                }
-            }
-            .navigationTitle("Feed My EV Trip")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        cancelActiveSearches()
-                        isSearching = false
-                        isLoadingFood = false
-                        showsRoutePlanner = true
-                    } label: {
-                        Label("Search", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
-                    }
-                }
-            }
-            .sheet(isPresented: $showsRoutePlanner) {
-                FindMyStopView(destination: destination, onResults: showRouteResults)
-            }
-            .searchable(
-                text: $destination,
-                placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Town or destination"
-            )
-            .onSubmit(of: .search, search)
-            .onChange(of: locationService.location?.timestamp) { _, _ in
-                centerOnCurrentLocation()
-            }
-            .sheet(item: $selectedFoodDetails) { selection in
-                FoodDetailsView(
-                    food: selection.mapItem,
-                    distanceAndWalk: selection.distanceAndWalk
-                )
+            .background(.regularMaterial)
+        }
+        .onChange(of: locationService.location?.timestamp) { _, _ in
+            guard waitingForNearbyLocation else { return }
+            waitingForNearbyLocation = false
+            centerOnCurrentLocation()
+        }
+        .sheet(item: $selectedFoodDetails) { selection in
+            FoodDetailsView(food: selection.mapItem, distanceAndWalk: selection.distanceAndWalk)
                 .presentationDetents([.medium, .large])
+        }
+        .alert("Location unavailable", isPresented: Binding(
+            get: { locationService.errorMessage != nil },
+            set: { if !$0 { locationService.clearError(); waitingForNearbyLocation = false } }
+        )) {
+            Button("OK", role: .cancel) { locationService.clearError(); waitingForNearbyLocation = false }
+        } message: {
+            Text(locationService.errorMessage ?? "Please try again.")
+        }
+    }
+
+    private var mapView: some View {
+        Map(position: $cameraPosition) {
+            UserAnnotation()
+            if let results = routeResults {
+                MapPolyline(results.route.polyline).stroke(.blue.opacity(0.55), lineWidth: 5)
+                MapPolyline(results.stopSegment).stroke(.orange, lineWidth: 7)
+                Marker("Start", systemImage: "play.fill", coordinate: results.startCoordinate).tint(.blue)
+                Marker("Destination: \(results.destinationName)", systemImage: "flag.checkered", coordinate: results.destinationCoordinate).tint(.red)
             }
-            .alert(
-                "Location unavailable",
-                isPresented: Binding(
-                    get: { locationService.errorMessage != nil },
-                    set: { if !$0 { locationService.clearError() } }
-                )
-            ) {
-                Button("OK", role: .cancel) {
-                    locationService.clearError()
+            ForEach(chargers) { charger in
+                Annotation(charger.name, coordinate: charger.coordinate) {
+                    Button { select(charger) } label: {
+                        Image(systemName: isSaved(charger) ? "bookmark.circle.fill" : "bolt.circle.fill")
+                            .font(selectedCharger?.id == charger.id ? .largeTitle : .title)
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, isSaved(charger) ? .purple : .green)
+                            .padding(4)
+                            .background(.black.opacity(0.7), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Select \(isSaved(charger) ? "saved charger " : "")\(charger.name)")
                 }
-            } message: {
-                Text(locationService.errorMessage ?? "Please try again.")
+            }
+            if isShowingStopArea {
+                ForEach(Array(nearbyFood.prefix(3).enumerated()), id: \.offset) { _, food in
+                    Annotation(food.name ?? "Food", coordinate: food.location.coordinate) {
+                        Button { selectFoodDetails(food) } label: {
+                            Image(systemName: "fork.knife.circle.fill")
+                                .font(.title2).foregroundStyle(.orange)
+                                .background(.white, in: Circle())
+                        }
+                        .accessibilityLabel("View \(food.name ?? "food option")")
+                    }
+                }
             }
         }
+        .mapStyle(.standard(pointsOfInterest: .excludingAll))
+        .mapControls { MapCompass(); MapScaleView() }
+        .onMapCameraChange(frequency: .onEnd) { context in
+            visibleRegion = context.region
+            if suppressesNextCameraPrompt { suppressesNextCameraPrompt = false }
+            else if hasSearched { showsSearchHere = true }
+        }
+        .overlay(alignment: .top) {
+            if showsSearchHere && routeResults == nil && searchMode == .nearby && !isEditingSearch && selectedCharger == nil && !isSearching {
+                Button("Search this area", action: searchVisibleRegion)
+                    .buttonStyle(.borderedProminent).padding(10)
+            }
+        }
+    }
+
+    private func panelHeight(available: CGFloat) -> CGFloat {
+        switch panelSize {
+        case .compact: return min(160, available * 0.3)
+        case .medium: return available * 0.52
+        case .expanded: return available * 0.88
+        }
+    }
+
+    private var searchPanel: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 10) {
+                Capsule().fill(.secondary.opacity(0.5)).frame(width: 40, height: 5)
+                HStack {
+                    if selectedCharger != nil {
+                        Button(action: returnToResults) { Label("Results", systemImage: "chevron.left") }
+                        Spacer()
+                        Text("Charging stop").font(.headline)
+                    } else {
+                        Text(isEditingSearch ? "Search" : "Charging stops").font(.title3.bold())
+                        Spacer()
+                        if isEditingSearch && hasSearched {
+                            Button("Back to results") { isEditingSearch = false; panelSize = .medium }
+                        } else if !isEditingSearch {
+                            Button("Edit search", action: editSearch)
+                        }
+                    }
+                    Button {
+                        withAnimation { panelSize = panelSize == .expanded ? .medium : .expanded }
+                    } label: {
+                        Image(systemName: panelSize == .expanded ? "chevron.down" : "chevron.up")
+                    }
+                    .accessibilityLabel(panelSize == .expanded ? "Collapse panel" : "Expand panel")
+                }
+            }
+            .padding()
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 20).onEnded { value in
+                withAnimation {
+                    if value.translation.height < -25 { panelSize = panelSize == .compact ? .medium : .expanded }
+                    if value.translation.height > 25 { panelSize = panelSize == .expanded ? .medium : .compact }
+                }
+            })
+
+            if isEditingSearch {
+                Picker("Search mode", selection: $searchMode) {
+                    ForEach(SearchMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented).padding(.horizontal)
+                if searchMode == .route {
+                    FindMyStopView(destination: $routeDestination, onResults: showRouteResults)
+                } else {
+                    Form {
+                        Section("Search nearby") {
+                            TextField("Town or address", text: $destination)
+                                .onSubmit(search)
+                            Button("Search", action: search)
+                                .disabled(destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            Button {
+                                waitingForNearbyLocation = true
+                                locationService.requestCurrentLocation()
+                            } label: { Label("Use my location", systemImage: "location.fill") }
+                        }
+                    }
+                }
+            } else if selectedCharger != nil {
+                ScrollView {
+                    if let stop = routeResults?.stops.first(where: { $0.id == selectedCharger?.id }) {
+                        Text(stop.summary).font(.caption).padding(.horizontal)
+                    }
+                    StopResultPanel(state: panelState, onSave: saveSelectedCharger,
+                        onDirections: openSelectedChargerDirections, onToggleMapDetail: toggleMapDetail,
+                        onSelectFood: selectFoodDetails)
+                }
+            } else {
+                resultsList
+            }
+        }
+    }
+
+    private var resultsList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                if let results = routeResults {
+                    Text("To \(results.destinationName)").font(.headline)
+                    Text(results.windowDescription).font(.subheadline)
+                    Label("Orange shows the approximate stop window", systemImage: "line.diagonal")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("Near \(resultAreaName)").font(.headline)
+                }
+                if isSearching { ProgressView("Finding chargers…") }
+                if let message { Text(message).font(.subheadline).foregroundStyle(.secondary) }
+                ForEach(chargers) { charger in
+                    Button { select(charger) } label: {
+                        HStack {
+                            Image(systemName: isSaved(charger) ? "bookmark.fill" : "bolt.fill")
+                                .foregroundStyle(isSaved(charger) ? .purple : .green)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(charger.name).font(.headline)
+                                if isSaved(charger) { Text("Saved charger").font(.caption).foregroundStyle(.purple) }
+                                if let stop = routeResults?.stops.first(where: { $0.id == charger.id }) {
+                                    Text(stop.summary).font(.caption)
+                                } else { Text(charger.address).font(.caption) }
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                        }
+                        .padding().frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
+                if let notice = routeResults?.notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
+            }
+            .padding()
+        }
+    }
+
+    private func editSearch() {
+        cancelActiveSearches()
+        isSearching = false
+        isEditingSearch = true
+        panelSize = .medium
+    }
+
+    private func returnToResults() {
+        foodSearchTask?.cancel()
+        searchService.cancelActiveSearch()
+        selectedCharger = nil
+        nearbyFood = []
+        isLoadingFood = false
+        isShowingStopArea = false
+        overviewRegion = nil
+        suppressesNextCameraPrompt = true
+        if let resultsRegion { cameraPosition = .region(resultsRegion) }
+        panelSize = .medium
     }
 
     private func showRouteResults(_ results: RouteStopResults) {
         cancelActiveSearches()
         routeResults = results
-        destination = results.destinationName
+        isEditingSearch = false
+        hasSearched = true
+        panelSize = .medium
         chargers = results.stops.map(\.charger)
         selectedCharger = nil
         nearbyFood = []
@@ -250,55 +297,6 @@ struct SearchView: View {
             : "Select a stop to check nearby food and save it."
         let rect = results.route.polyline.boundingMapRect
         cameraPosition = .rect(rect.insetBy(dx: -rect.width * 0.12, dy: -rect.height * 0.12))
-    }
-
-    private func routeResultsPanel(_ results: RouteStopResults) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("To \(results.destinationName)")
-                    .font(.headline).lineLimit(1)
-                Spacer()
-                Button("Edit") { showsRoutePlanner = true }
-                Button("Clear") {
-                    cancelActiveSearches()
-                    routeResults = nil
-                    chargers = []
-                    selectedCharger = nil
-                    nearbyFood = []
-                    isLoadingFood = false
-                    message = nil
-                }
-            }
-            Text("\(Int((results.route.distance / 1609.344).rounded())) mi · \(Int((results.route.expectedTravelTime / 60).rounded())) min drive · \(results.stops.count) stops")
-                .font(.caption).foregroundStyle(.secondary)
-            if !results.stops.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack {
-                        ForEach(results.stops) { stop in
-                            Button { select(stop.charger) } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Label(stop.charger.name, systemImage: isSaved(stop.charger) ? "bookmark.fill" : "bolt.fill")
-                                        .font(.subheadline.bold()).lineLimit(1)
-                                    if isSaved(stop.charger) {
-                                        Text("Saved charger").font(.caption).foregroundStyle(.purple)
-                                    }
-                                    Text(stop.summary).font(.caption)
-                                }
-                                .padding(10)
-                                .background(selectedCharger?.id == stop.id ? Color.green.opacity(0.2) : Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
-            if let notice = results.notice, selectedCharger == nil {
-                Text(notice).font(.caption2).foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(.regularMaterial)
     }
 
     private var panelState: StopPanelState {
@@ -331,6 +329,10 @@ struct SearchView: View {
         guard !trimmedDestination.isEmpty else { return }
 
         cancelActiveSearches()
+        resultAreaName = trimmedDestination
+        isEditingSearch = false
+        hasSearched = true
+        panelSize = .medium
         routeResults = nil
         isSearching = true
         message = nil
@@ -374,6 +376,8 @@ struct SearchView: View {
     private func searchVisibleRegion() {
         guard let visibleRegion else { return }
         routeResults = nil
+        chargers = []
+        resultAreaName = "this area"
 
         cancelActiveSearches()
         showsSearchHere = false
@@ -396,6 +400,10 @@ struct SearchView: View {
 
     private func centerOnCurrentLocation() {
         guard let location = locationService.location else { return }
+        resultAreaName = "your location"
+        isEditingSearch = false
+        hasSearched = true
+        panelSize = .medium
         routeResults = nil
 
         let region = MKCoordinateRegion(
@@ -454,12 +462,17 @@ struct SearchView: View {
 
     private func select(_ charger: ChargerResult) {
         let selectedID = charger.id
+        if selectedCharger == nil { resultsRegion = visibleRegion }
+        isEditingSearch = false
+        panelSize = .medium
         selectedCharger = charger
         nearbyFood = []
         isLoadingFood = true
         isShowingStopArea = false
         overviewRegion = nil
 
+        areaSearchTask?.cancel()
+        isSearching = false
         foodSearchTask?.cancel()
         searchService.cancelActiveSearch()
         foodSearchTask = Task {

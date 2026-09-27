@@ -6,7 +6,7 @@ struct RootView: View {
         TabView {
             SearchView()
                 .tabItem {
-                    Label("Find", systemImage: "map")
+                    Label("Search", systemImage: "map")
                 }
 
             SavedStopsView()

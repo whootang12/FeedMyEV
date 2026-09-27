@@ -3,12 +3,11 @@ import SwiftUI
 import SwiftData
 
 struct FindMyStopView: View {
-    @Environment(\.dismiss) private var dismiss
     @Query private var savedStops: [SavedStop]
     @StateObject private var service = RouteStopService()
     @StateObject private var locationService = LocationService()
     @AppStorage("route.origin") private var origin = ""
-    @State private var destination: String
+    @Binding var destination: String
     @AppStorage("route.windowUnit") private var unit: StopWindowUnit = .minutes
     @AppStorage("route.windowLower") private var lower = 60.0
     @AppStorage("route.windowUpper") private var upper = 120.0
@@ -18,23 +17,18 @@ struct FindMyStopView: View {
     @State private var searchTask: Task<Void, Never>?
     let onResults: (RouteStopResults) -> Void
 
-    init(destination: String, onResults: @escaping (RouteStopResults) -> Void) {
-        _destination = State(initialValue: destination)
-        self.onResults = onResults
-    }
 
     var body: some View {
-        NavigationStack {
-            Form {
+        Form {
                 Section("Your drive") {
-                    TextField("Starting town or address", text: $origin)
+                    TextField("From: Current location", text: $origin)
                         .textInputAutocapitalization(.words)
                     Button {
                         origin = ""
                         locationService.clearError()
                         locationService.requestCurrentLocation()
                     } label: {
-                        Label(locationService.location == nil ? "Use my location" : "Current location ready", systemImage: "location.fill")
+                        Label(locationService.location == nil || !origin.isEmpty ? "Use my location" : "Current location ready", systemImage: "location.fill")
                     }
                     if let error = locationService.errorMessage {
                         Text(error).font(.caption).foregroundStyle(.red)
@@ -45,6 +39,7 @@ struct FindMyStopView: View {
                 .disabled(isSearching)
 
                 Section {
+                    DisclosureGroup("Stop in \(Int(lower))–\(Int(upper)) \(unit.rawValue.lowercased()) · Max detour \(Int(maximumDetour)) min") {
                     Picker("Measure ahead in", selection: $unit) {
                         ForEach(StopWindowUnit.allCases) { unit in
                             Text(unit.rawValue).tag(unit)
@@ -59,6 +54,7 @@ struct FindMyStopView: View {
                             Text("\(Int(value)) minutes").tag(value)
                         }
                     }
+                    }
                 } header: {
                     Text("Find a stop ahead")
                 } footer: {
@@ -70,27 +66,25 @@ struct FindMyStopView: View {
                     Section { Text(errorMessage).foregroundStyle(.red) }
                 }
 
-                Section {
-                    if isSearching {
-                        ProgressView(service.progress)
-                    } else {
-                        Button("Search", action: search)
-                            .font(.headline)
-                            .disabled(destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                                      (origin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && locationService.location == nil))
+            }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 8) {
+                if isSearching {
+                    ProgressView(service.progress)
+                    Button("Cancel search") { cancel(); isSearching = false }
+                } else {
+                    Button(action: search) {
+                        Label("Search", systemImage: "magnifyingglass")
+                            .font(.headline).frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                              (origin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && locationService.location == nil))
                 }
             }
-            .navigationTitle("Search")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { cancel(); dismiss() }
-                }
-            }
-            .interactiveDismissDisabled(isSearching)
-            .onDisappear(perform: cancel)
+            .padding().background(.regularMaterial)
         }
+        .onDisappear(perform: cancel)
     }
 
     private func search() {
@@ -108,7 +102,6 @@ struct FindMyStopView: View {
                 )
                 try Task.checkCancellation()
                 onResults(result)
-                dismiss()
             } catch {
                 guard !Task.isCancelled else { return }
                 switch error {
