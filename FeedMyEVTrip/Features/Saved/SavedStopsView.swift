@@ -43,7 +43,11 @@ struct SavedStopsView: View {
                         } else {
                             List {
                                 ForEach(savedStops) { stop in
-                                    stopRow(stop)
+                                    NavigationLink {
+                                        SavedStopDetailsView(stop: stop)
+                                    } label: {
+                                        stopRow(stop)
+                                    }
                                 }
                                 .onDelete(perform: delete)
                             }
@@ -107,6 +111,24 @@ struct SavedStopsView: View {
 
                     stopRow(stop)
                         .frame(maxWidth: .infinity, alignment: .leading)
+
+                    HStack {
+                        NavigationLink {
+                            SavedStopDetailsView(stop: stop)
+                        } label: {
+                            Label("View details", systemImage: "info.circle")
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button {
+                            openDirections(to: stop)
+                        } label: {
+                            Label("Directions", systemImage: "arrow.triangle.turn.up.right.diamond")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .tint(.green)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding()
                 .background(.regularMaterial)
@@ -138,13 +160,6 @@ struct SavedStopsView: View {
                     .lineLimit(2)
             }
 
-            Button {
-                openDirections(to: stop)
-            } label: {
-                Label("Directions", systemImage: "arrow.triangle.turn.up.right.diamond")
-            }
-            .buttonStyle(.bordered)
-            .tint(.green)
         }
         .padding(.vertical, 6)
     }

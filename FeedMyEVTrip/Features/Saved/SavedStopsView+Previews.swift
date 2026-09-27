@@ -16,6 +16,19 @@ import SwiftUI
         .modelContainer(savedStopsPreviewContainer())
 }
 
+#Preview("Saved stop details") {
+    NavigationStack {
+        SavedStopDetailsView(stop: SavedStop(
+            chargerName: "Tesla Supercharger",
+            address: "3371 Brunswick Pike, Lawrenceville, NJ 08648",
+            latitude: 40.2937,
+            longitude: -74.6818,
+            foodNames: ["Turning Point", "Shake Shack", "Sweetgreen"]
+        ))
+    }
+    .modelContainer(for: SavedStop.self, inMemory: true)
+}
+
 @MainActor
 private func savedStopsPreviewContainer() -> ModelContainer {
     let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
