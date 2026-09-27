@@ -36,3 +36,4 @@ Preferences for AI assistants working in this repository. Read this before makin
 - 2026-09-26: Walking directions from a restaurant start at the selected charger and end at the restaurant.
 - 2026-09-26: Charger connector preferences are CCS, NACS, and CHAdeMO. A stop stays in results when it has at least one selected connector.
 - 2026-09-26: Detailed feature requirements and test cases live in `FeedMyEVTrip/docs/requirements/`, one feature per file.
+- 2026-09-27: Keep the evolving product briefing in `docs/PRODUCT_BRIEF.md`; keep concrete search-page behavior in `docs/requirements/search/search-experience.md` and related feature requirement files.

@@ -18,6 +18,7 @@ Location access is used to find chargers and nearby food. Refreshing the charger
 
 ## Documentation
 
+- [Product brief](PRODUCT_BRIEF.md)
 - [MVP status](MVP_STATUS.md)
 - [Feature requirements](requirements/README.md)
 - [AFDC charger catalog](AFDC_DATA.md)

@@ -29,8 +29,8 @@ struct SearchView: View {
     @State private var routeDestination = ""
     @State private var resultAreaName = "your location"
     @State private var isEditingSearch = true
-    @State private var searchMode = SearchMode.route
-    @State private var panelSize = PanelSize.medium
+    @State private var searchMode = SearchMode.nearby
+    @State private var panelSize = PanelSize.compact
     @State private var hasSearched = false
     @State private var waitingForNearbyLocation = false
     @State private var resultsRegion: MKCoordinateRegion?
@@ -56,6 +56,10 @@ struct SearchView: View {
     @State private var isSyncingChargerNote = false
     @State private var areaSearchTask: Task<Void, Never>?
     @State private var foodSearchTask: Task<Void, Never>?
+
+    private var isStartingScreen: Bool {
+        !hasSearched && selectedCharger == nil
+    }
 
     init() {
         _cameraPosition = State(initialValue: .region(startingRegion))
@@ -149,7 +153,31 @@ struct SearchView: View {
             else if hasSearched { showsSearchHere = true }
         }
         .overlay(alignment: .top) {
-            if showsSearchHere && routeResults == nil && searchMode == .nearby && !isEditingSearch && selectedCharger == nil && !isSearching {
+            if isStartingScreen {
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+
+                    TextField("Search here", text: $destination)
+                        .textInputAutocapitalization(.words)
+                        .submitLabel(.search)
+                        .onSubmit(search)
+
+                    if !destination.isEmpty {
+                        Button("Clear search", systemImage: "xmark.circle.fill") {
+                            destination = ""
+                        }
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 50)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 15))
+                .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+            } else if showsSearchHere && routeResults == nil && searchMode == .nearby && !isEditingSearch && selectedCharger == nil && !isSearching {
                 Button("Search this area", action: searchVisibleRegion)
                     .buttonStyle(.borderedProminent).padding(10)
             }
@@ -174,7 +202,8 @@ struct SearchView: View {
                         Spacer()
                         Text("Charging stop").font(.headline)
                     } else {
-                        Text(isEditingSearch ? "Search" : "Charging stops").font(.title3.bold())
+                        Text(isStartingScreen ? "Nearby" : (isEditingSearch ? "Search" : "Charging stops"))
+                            .font(.title3.bold())
                         Spacer()
                         if isEditingSearch && hasSearched {
                             Button("Back to results") { isEditingSearch = false; panelSize = .medium }
@@ -182,12 +211,17 @@ struct SearchView: View {
                             Button("Edit search", action: editSearch)
                         }
                     }
-                    Button {
-                        withAnimation { panelSize = panelSize == .expanded ? .medium : .expanded }
-                    } label: {
-                        Image(systemName: panelSize == .expanded ? "chevron.down" : "chevron.up")
+                    if isStartingScreen {
+                        Button("Search", action: search)
+                            .buttonStyle(.bordered)
+                    } else {
+                        Button {
+                            withAnimation { panelSize = panelSize == .expanded ? .medium : .expanded }
+                        } label: {
+                            Image(systemName: panelSize == .expanded ? "chevron.down" : "chevron.up")
+                        }
+                        .accessibilityLabel(panelSize == .expanded ? "Collapse panel" : "Expand panel")
                     }
-                    .accessibilityLabel(panelSize == .expanded ? "Collapse panel" : "Expand panel")
                 }
             }
             .padding()
@@ -199,7 +233,9 @@ struct SearchView: View {
                 }
             })
 
-            if isEditingSearch {
+            if isStartingScreen {
+                nearbyPreferences
+            } else if isEditingSearch {
                 Picker("Search mode", selection: $searchMode) {
                     ForEach(SearchMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
@@ -238,6 +274,42 @@ struct SearchView: View {
                 resultsList
             }
         }
+    }
+
+    private var nearbyPreferences: some View {
+        Form {
+            Section("Restaurant preferences") {
+                preferenceRow(title: "Cuisine", value: "All", systemImage: "fork.knife")
+                preferenceRow(title: "Chains", value: "All", systemImage: "building.2")
+            }
+
+            Section("Charging needs") {
+                preferenceRow(title: "Connector", value: "All", systemImage: "powerplug")
+                preferenceRow(title: "Network", value: "All", systemImage: "network")
+                preferenceRow(title: "Speed", value: "150+ kW", systemImage: "bolt.fill")
+            }
+        }
+    }
+
+    private func preferenceRow(
+        title: LocalizedStringKey,
+        value: LocalizedStringKey,
+        systemImage: String
+    ) -> some View {
+        Button {} label: {
+            HStack(spacing: 12) {
+                Label(title, systemImage: systemImage)
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text(value)
+                    .foregroundStyle(.secondary)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var resultsList: some View {
