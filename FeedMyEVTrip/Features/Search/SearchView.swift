@@ -314,7 +314,8 @@ struct SearchView: View {
         let stop = StopSummary(
             chargerName: selectedCharger.name,
             address: selectedCharger.address,
-            foodOptions: foodOptions
+            foodOptions: foodOptions,
+            metadata: selectedCharger.metadataSummary
         )
         return .selected(
             stop: stop,
@@ -439,20 +440,15 @@ struct SearchView: View {
         areaName: String
     ) async {
         do {
-            let places = try await searchService.searchChargers(in: region)
+            let found = try await AFDCChargerProvider.shared.chargers(in: region)
             try Task.checkCancellation()
-            chargers = mergeChargers(
-                existing: chargers,
-                new: places.map {
-                    ChargerResult(
-                        mapItem: $0.mapItem,
-                        placeIdentifier: $0.identifier
-                    )
-                }
-            )
+            chargers = found
             message = chargers.isEmpty
                 ? "No chargers found near \(areaName)."
                 : "Choose one of \(chargers.count) charging stops."
+            if let warning = AFDCChargerProvider.shared.warning {
+                message = (message ?? "") + " " + warning
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -599,6 +595,7 @@ struct SearchView: View {
             latitude: selectedCharger.coordinate.latitude,
             longitude: selectedCharger.coordinate.longitude,
             mapItemIdentifier: selectedCharger.placeIdentifier,
+            afdcStationID: selectedCharger.afdcStationID,
             foodNames: nearbyFood.prefix(3).compactMap(\.name)
         )
         modelContext.insert(stop)
@@ -625,6 +622,8 @@ struct SearchView: View {
 
     private func searchMessage(for error: Error) -> String {
         switch error {
+        case let error as AFDCCatalogError:
+            return error.localizedDescription
         case MapSearchFailure.throttled:
             return "Map search is temporarily limited. Please try again shortly."
         case MapSearchFailure.networkUnavailable:

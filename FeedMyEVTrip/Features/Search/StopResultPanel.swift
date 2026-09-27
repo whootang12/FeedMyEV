@@ -6,6 +6,7 @@ struct StopSummary {
     let chargerName: String
     let address: String
     let foodOptions: [FoodSummary]
+    var metadata: String? = nil
 }
 
 struct FoodSummary: Identifiable {
@@ -82,6 +83,10 @@ struct StopResultPanel: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(2)
+
+        if let metadata = stop.metadata {
+            Text(metadata).font(.caption).foregroundStyle(.secondary)
+        }
 
         if isLoadingFood {
             ProgressView("Checking nearby food…")

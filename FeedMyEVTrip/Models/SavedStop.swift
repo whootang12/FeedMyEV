@@ -11,6 +11,7 @@ final class SavedStop {
     var latitude: Double
     var longitude: Double
     var mapItemIdentifier: String?
+    var afdcStationID: Int?
     var savedAt: Date
     var foodNames: String
 
@@ -20,6 +21,7 @@ final class SavedStop {
         latitude: Double,
         longitude: Double,
         mapItemIdentifier: String? = nil,
+        afdcStationID: Int? = nil,
         foodNames: [String]
     ) {
         id = UUID()
@@ -28,6 +30,7 @@ final class SavedStop {
         self.latitude = latitude
         self.longitude = longitude
         self.mapItemIdentifier = mapItemIdentifier
+        self.afdcStationID = afdcStationID
         savedAt = Date()
         self.foodNames = foodNames.joined(separator: "\n")
     }

@@ -15,7 +15,7 @@ Find a useful EV charging stop along a drive, within a chosen time or distance w
 - Explicit **Along a route** and **Near a place** search modes.
 - Starting-place and destination entry, plus current-location support.
 - Stop windows in minutes or miles, with a maximum added driving detour.
-- Route-based charger discovery, driving estimates, and detour checks.
+- Route-based charger discovery from a local AFDC catalog, driving estimates, and detour checks.
 - Results ordered by added detour, with arrival time and distance.
 - Route display with start/destination icons and an approximate stop-window highlight.
 - Editable search inputs and return from charger details to the results map.
@@ -39,7 +39,9 @@ Find a useful EV charging stop along a drive, within a chosen time or distance w
 
 ### Search infrastructure
 
-- Seven-day persistent place caching.
+- Bundled AFDC U.S. public DC-fast catalog with local charger discovery and a 30-day refresh interval.
+- Secure API-key setup, manual catalog refresh, and older-catalog fallback in Preferences → Charger Data.
+- Seven-day Apple place caching remains separate; its retention policy still needs review against Apple’s terms.
 - Search cancellation, throttling retries, and error handling.
 - Partial-result notices when some route searches or driving estimates fail.
 
@@ -47,7 +49,7 @@ Find a useful EV charging stop along a drive, within a chosen time or distance w
 
 | Area | Remaining work |
 | --- | --- |
-| Charger data and preferences | Add reliable power and connector data, persistent charger preferences, and filtering for compatible 150+ kW chargers. Establish a provider interface so charger data sources can be changed independently. |
+| Charger data and preferences | AFDC provider interface, station IDs, connector metadata, network names, and DC-fast port counts are built. Add reliable power verification, vehicle/access compatibility, persistent charger preferences, and filtering for compatible 150+ kW chargers. |
 | Personalized food preferences | Save preferred restaurant chains and cuisines and use them in food searches. |
 | Food-aware stop recommendations | Check food matches before presenting recommended stops. Currently, food is loaded only after selecting a charger. |
 | Walking directions | Replace straight-line distance/time estimates with actual walking routes and travel times; apply the walking limit to those routes. |
@@ -59,7 +61,7 @@ Find a useful EV charging stop along a drive, within a chosen time or distance w
 ## Current limitations
 
 - Charger results do not yet verify charging power or connector compatibility.
-- Route discovery samples areas and limits checks of newly discovered chargers; it is not an exhaustive charger catalog. Saved candidates bypass that discovery cap, but failed requests can still leave results incomplete.
+- Route discovery uses the local AFDC catalog and an approximate route corridor, then limits driving checks of newly discovered candidates. Saved candidates bypass that cap; failed driving requests can still leave results incomplete.
 - The highlighted time-based stop segment is approximate. Candidate acceptance uses calculated driving estimates.
 - Driving estimates can change. Detours exclude charging and meal time.
 - Walking times are straight-line estimates rather than verified pedestrian routes.

@@ -17,6 +17,9 @@ struct FoodPreferencesView: View {
         NavigationStack {
             Form {
                 Section {
+                    NavigationLink("Charger Data") { ChargerDataView() }
+                }
+                Section {
                     Picker("Maximum walk", selection: $maximumWalkingMinutes) {
                         Text("5 minutes").tag(5)
                         Text("10 minutes").tag(10)
@@ -42,7 +45,7 @@ struct FoodPreferencesView: View {
                     Text("At least one type must remain selected.")
                 }
             }
-            .navigationTitle("Food Preferences")
+            .navigationTitle("Preferences")
         }
     }
 }

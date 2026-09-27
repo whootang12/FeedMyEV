@@ -105,6 +105,8 @@ struct FindMyStopView: View {
             } catch {
                 guard !Task.isCancelled else { return }
                 switch error {
+                case let failure as AFDCCatalogError:
+                    errorMessage = failure.localizedDescription
                 case MapSearchFailure.throttled:
                     errorMessage = "Apple Maps is limiting requests. Please wait a moment and try again."
                 case MapSearchFailure.networkUnavailable:
