@@ -6,6 +6,7 @@ The app uses the U.S. Department of Energy Alternative Fuels Data Center (AFDC) 
 
 - A bundled snapshot provides U.S. public, available DC-fast stations immediately. No API key or charger-discovery request is needed for the initial catalog.
 - Nearby searches filter the local catalog to the visible map region. Route searches select catalog stations near the relevant route segment before checking driving estimates with MapKit.
+- Preferences for CCS, NACS, and CHAdeMO keep a stop when it lists at least one selected connector. Stations with none of those connector codes stay visible.
 - Saved stations preserve AFDC IDs separately from Apple place IDs. Older saved stops can match by location.
 - AFDC includes station-level connector types, network names, and DC-fast port counts. These do not guarantee 150+ kW, vehicle access, or real-time availability.
 
@@ -36,7 +37,7 @@ The current provider covers the U.S. only and excludes Level-1/Level-2-only stat
 From the repository root, compile and run the standalone fixture checks:
 
 ```sh
-swiftc FeedMyEVTrip/Models/AFDCStation.swift Tests/AFDCCatalogChecks.swift -o /tmp/afdc-catalog-checks
+swiftc FeedMyEVTrip/Models/AFDCStation.swift FeedMyEVTrip/Models/ChargerConnector.swift Tests/AFDCCatalogChecks.swift -o /tmp/afdc-catalog-checks
 /tmp/afdc-catalog-checks Tests/afdc-sample.json
 ```
 

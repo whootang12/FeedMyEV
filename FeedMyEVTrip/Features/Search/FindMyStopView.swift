@@ -58,7 +58,7 @@ struct FindMyStopView: View {
                 } header: {
                     Text("Find a stop ahead")
                 } footer: {
-                    Text("The window measures driving time or distance from your starting point to the charger. Food is available after selecting a stop. Charger power and connector compatibility are not yet verified.")
+                    Text("The window measures driving time or distance from your starting point to the charger. Food is available after selecting a stop. Results use the CCS, NACS, and CHAdeMO connectors selected in Preferences. Charging power is not verified.")
                 }
                 .disabled(isSearching)
 

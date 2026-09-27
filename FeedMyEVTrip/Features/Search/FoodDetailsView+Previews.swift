@@ -4,8 +4,16 @@ import SwiftUI
 #Preview("Food details") {
     FoodDetailsView(
         food: previewFoodItem(),
+        charger: previewChargerItem(),
         distanceAndWalk: "760 ft · ~4 min walk"
     )
+}
+
+private func previewChargerItem() -> MKMapItem {
+    let location = CLLocation(latitude: 40.3294, longitude: -74.7910)
+    let item = MKMapItem(location: location, address: nil)
+    item.name = "Pennington Supercharger"
+    return item
 }
 
 private func previewFoodItem() -> MKMapItem {

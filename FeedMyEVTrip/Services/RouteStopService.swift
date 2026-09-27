@@ -146,10 +146,12 @@ final class RouteStopService: ObservableObject {
             let charger = catalog.first(where: { $0.matches(saved) }) ?? saved
             if !savedCandidates.contains(where: { $0.matches(charger) }) { savedCandidates.append(charger) }
         }
+        let compatibleSaved = savedCandidates.filter { ChargerConnector.allows($0.connectorCodes) }
         let unsavedCandidates = ranked.filter { candidate in
-            !savedCandidates.contains { $0.matches(candidate) }
+            ChargerConnector.allows(candidate.connectorCodes)
+                && !compatibleSaved.contains { $0.matches(candidate) }
         }
-        let checkedCandidates = savedCandidates + Array(unsavedCandidates.prefix(12))
+        let checkedCandidates = compatibleSaved + Array(unsavedCandidates.prefix(12))
         var stops: [RouteStop] = []
         for (index, charger) in checkedCandidates.enumerated() {
             try Task.checkCancellation()

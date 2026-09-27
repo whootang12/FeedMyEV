@@ -75,7 +75,11 @@ struct SearchView: View {
             centerOnCurrentLocation()
         }
         .sheet(item: $selectedFoodDetails) { selection in
-            FoodDetailsView(food: selection.mapItem, distanceAndWalk: selection.distanceAndWalk)
+            FoodDetailsView(
+                food: selection.mapItem,
+                charger: selection.charger,
+                distanceAndWalk: selection.distanceAndWalk
+            )
                 .presentationDetents([.medium, .large])
         }
         .alert("Location unavailable", isPresented: Binding(
@@ -442,9 +446,11 @@ struct SearchView: View {
         do {
             let found = try await AFDCChargerProvider.shared.chargers(in: region)
             try Task.checkCancellation()
-            chargers = found
+            chargers = found.filter { ChargerConnector.allows($0.connectorCodes) }
             message = chargers.isEmpty
-                ? "No chargers found near \(areaName)."
+                ? (found.isEmpty
+                    ? "No chargers found near \(areaName)."
+                    : "No chargers near \(areaName) match your connector preferences.")
                 : "Choose one of \(chargers.count) charging stops."
             if let warning = AFDCChargerProvider.shared.warning {
                 message = (message ?? "") + " " + warning
@@ -529,6 +535,7 @@ struct SearchView: View {
         guard let selectedCharger else { return }
         selectedFoodDetails = SelectedFood(
             mapItem: food,
+            charger: selectedCharger.mapItem,
             distanceAndWalk: walkingEstimate(from: selectedCharger, to: food)
         )
     }

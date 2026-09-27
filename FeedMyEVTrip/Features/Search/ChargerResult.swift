@@ -8,10 +8,12 @@ struct ChargerResult: Identifiable {
     let placeIdentifier: String?
     let afdcStationID: Int?
     let metadataSummary: String?
+    let connectorCodes: Set<String>
 
-    init(mapItem: MKMapItem, placeIdentifier: String? = nil, afdcStationID: Int? = nil, metadataSummary: String? = nil) {
+    init(mapItem: MKMapItem, placeIdentifier: String? = nil, afdcStationID: Int? = nil, metadataSummary: String? = nil, connectorCodes: Set<String> = []) {
         self.afdcStationID = afdcStationID
         self.metadataSummary = metadataSummary
+        self.connectorCodes = connectorCodes
         self.mapItem = mapItem
         self.placeIdentifier = placeIdentifier ?? mapItem.identifier?.rawValue
     }
@@ -23,7 +25,12 @@ struct ChargerResult: Identifiable {
         )
         item.name = station.stationName
         item.pointOfInterestCategory = .evCharger
-        self.init(mapItem: item, afdcStationID: station.id, metadataSummary: station.summary)
+        self.init(
+            mapItem: item,
+            afdcStationID: station.id,
+            metadataSummary: station.summary,
+            connectorCodes: Set(station.evConnectorTypes ?? [])
+        )
     }
 
     init(savedStop: SavedStop) {

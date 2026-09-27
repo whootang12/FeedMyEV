@@ -19,6 +19,7 @@ Location access is used to find chargers and nearby food. Refreshing the charger
 ## Documentation
 
 - [MVP status](MVP_STATUS.md)
+- [Feature requirements](requirements/README.md)
 - [AFDC charger catalog](AFDC_DATA.md)
 - [AI working preferences](CODEX.md)
 
@@ -27,7 +28,7 @@ Location access is used to find chargers and nearby food. Refreshing the charger
 From the repository root:
 
 ```sh
-swiftc FeedMyEVTrip/Models/AFDCStation.swift Tests/AFDCCatalogChecks.swift -o /tmp/afdc-catalog-checks
+swiftc FeedMyEVTrip/Models/AFDCStation.swift FeedMyEVTrip/Models/ChargerConnector.swift Tests/AFDCCatalogChecks.swift -o /tmp/afdc-catalog-checks
 /tmp/afdc-catalog-checks Tests/afdc-sample.json
 ```
 

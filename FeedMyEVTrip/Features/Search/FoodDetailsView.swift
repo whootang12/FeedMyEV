@@ -4,6 +4,7 @@ import SwiftUI
 struct SelectedFood: Identifiable {
     let id = UUID()
     let mapItem: MKMapItem
+    let charger: MKMapItem
     let distanceAndWalk: String
 }
 
@@ -12,6 +13,7 @@ struct FoodDetailsView: View {
     @Environment(\.openURL) private var openURL
 
     let food: MKMapItem
+    let charger: MKMapItem
     let distanceAndWalk: String
 
     var body: some View {
@@ -37,7 +39,9 @@ struct FoodDetailsView: View {
 
                 Section("More details") {
                     Button {
-                        food.openInMaps()
+                        MKMapItem.openMaps(with: [charger, food], launchOptions: [
+                            MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking
+                        ])
                     } label: {
                         Label("Open in Apple Maps", systemImage: "map.fill")
                     }
@@ -78,10 +82,14 @@ struct FoodDetailsView: View {
     }
 
     private var googleMapsURL: URL? {
-        var components = URLComponents(string: "https://www.google.com/maps/search/")
+        let origin = charger.location.coordinate
+        let destination = food.location.coordinate
+        var components = URLComponents(string: "https://www.google.com/maps/dir/")
         components?.queryItems = [
             URLQueryItem(name: "api", value: "1"),
-            URLQueryItem(name: "query", value: "\(food.name ?? "Food"), \(address)")
+            URLQueryItem(name: "origin", value: "\(origin.latitude),\(origin.longitude)"),
+            URLQueryItem(name: "destination", value: "\(destination.latitude),\(destination.longitude)"),
+            URLQueryItem(name: "travelmode", value: "walking")
         ]
         return components?.url
     }

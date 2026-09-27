@@ -5,6 +5,7 @@ Preferences for AI assistants working in this repository. Read this before makin
 ## Documentation
 
 - Keep project notes in `FeedMyEVTrip/docs/` so they appear in the Xcode project navigator.
+- Feature requirements and their future unit-test cases live in `FeedMyEVTrip/docs/requirements/`, one feature per file.
 - That folder is excluded from the app target. New notes belong there, and the exclusion in `project.pbxproj` must still cover them.
 - The repository-root `README.md` is a link to `FeedMyEVTrip/docs/README.md`, so GitHub still shows the same file.
 
@@ -32,3 +33,6 @@ Preferences for AI assistants working in this repository. Read this before makin
 
 - 2026-09-26: Started this file. Moved `AFDC_DATA.md` and `MVP_STATUS.md` into `docs/` so project notes live with the committed repository and stay out of the app bundle.
 - 2026-09-26: Keep project notes in `FeedMyEVTrip/docs/` so they are visible in Xcode, and keep that folder out of the app target.
+- 2026-09-26: Walking directions from a restaurant start at the selected charger and end at the restaurant.
+- 2026-09-26: Charger connector preferences are CCS, NACS, and CHAdeMO. A stop stays in results when it has at least one selected connector.
+- 2026-09-26: Detailed feature requirements and test cases live in `FeedMyEVTrip/docs/requirements/`, one feature per file.

@@ -27,6 +27,18 @@ payload["total_results"] = records.count
 let filtered = try AFDCPayload.decodeComplete(JSONSerialization.data(withJSONObject: payload))
 precondition(filtered.count == 2, "Planned, invalid coordinates and duplicate IDs must be excluded")
 
+let prefs = UserDefaults(suiteName: "ChargerConnectorChecks")!
+for connector in ChargerConnector.allCases {
+    prefs.removeObject(forKey: connector.storageKey)
+}
+precondition(ChargerConnector.allows(["J1772COMBO"], defaults: prefs))
+prefs.set(false, forKey: ChargerConnector.ccs.storageKey)
+prefs.set(false, forKey: ChargerConnector.chademo.storageKey)
+precondition(ChargerConnector.allows(["TESLA"], defaults: prefs))
+precondition(ChargerConnector.allows(["J1772COMBO", "TESLA"], defaults: prefs))
+precondition(!ChargerConnector.allows(["J1772COMBO"], defaults: prefs))
+precondition(ChargerConnector.allows(["J1772"], defaults: prefs))
+
 print("AFDC catalog checks passed")
     }
 }
