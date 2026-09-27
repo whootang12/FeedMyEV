@@ -1,0 +1,14 @@
+---
+description: Follow and update the project AI preferences in FeedMyEVTrip/docs/CODEX.md
+alwaysApply: true
+---
+
+# AI preferences
+
+Read `FeedMyEVTrip/docs/CODEX.md` before changing this project, and follow the preferences recorded there.
+
+When the user states a working preference, add a dated entry under **Log** in `FeedMyEVTrip/docs/CODEX.md` in the same session. Keep each entry to the preference itself.
+
+```markdown
+- 2026-09-26: Keep project notes in `FeedMyEVTrip/docs/` so they show in Xcode, and exclude that folder from the app target.
+```

@@ -10,9 +10,25 @@
 		000000000000000000000120 /* FeedMyEVTrip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FeedMyEVTrip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		000000000000000000000011 /* Exceptions for "FeedMyEVTrip" folder in "FeedMyEVTrip" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				docs/AFDC_DATA.md,
+				docs/CODEX.md,
+				docs/MVP_STATUS.md,
+				docs/README.md,
+			);
+			target = 000000000000000100000000 /* FeedMyEVTrip */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		000000000000000000000010 /* FeedMyEVTrip */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				000000000000000000000011 /* Exceptions for "FeedMyEVTrip" folder in "FeedMyEVTrip" target */,
+			);
 			path = FeedMyEVTrip;
 			sourceTree = "<group>";
 		};
