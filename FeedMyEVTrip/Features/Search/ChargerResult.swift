@@ -12,6 +12,21 @@ struct ChargerResult: Identifiable {
         self.placeIdentifier = placeIdentifier ?? mapItem.identifier?.rawValue
     }
 
+    init(savedStop: SavedStop) {
+        let item = MKMapItem(
+            location: CLLocation(latitude: savedStop.latitude, longitude: savedStop.longitude),
+            address: MKAddress(fullAddress: savedStop.address, shortAddress: nil)
+        )
+        item.name = savedStop.chargerName
+        self.init(mapItem: item, placeIdentifier: savedStop.mapItemIdentifier)
+    }
+
+    func matches(_ other: ChargerResult) -> Bool {
+        if let placeIdentifier, let otherIdentifier = other.placeIdentifier,
+           placeIdentifier == otherIdentifier { return true }
+        return mapItem.location.distance(from: other.mapItem.location) <= 20
+    }
+
     var name: String {
         mapItem.name ?? "EV Charger"
     }

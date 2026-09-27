@@ -53,6 +53,14 @@ struct SearchView: View {
                 if let routeResults {
                     MapPolyline(routeResults.route.polyline)
                         .stroke(.blue, lineWidth: 5)
+                    Marker("Start", systemImage: "play.fill", coordinate: routeResults.startCoordinate)
+                        .tint(.blue)
+                    Marker(
+                        "Destination: \(routeResults.destinationName)",
+                        systemImage: "flag.checkered",
+                        coordinate: routeResults.destinationCoordinate
+                    )
+                    .tint(.red)
                 }
 
                 ForEach(chargers) { charger in
@@ -60,17 +68,17 @@ struct SearchView: View {
                         Button {
                             select(charger)
                         } label: {
-                            Image(systemName: selectedCharger?.id == charger.id
-                                  ? "bolt.circle.fill"
-                                  : "bolt.circle")
+                            Image(systemName: isSaved(charger)
+                                  ? (selectedCharger?.id == charger.id ? "bookmark.circle.fill" : "bookmark.circle")
+                                  : (selectedCharger?.id == charger.id ? "bolt.circle.fill" : "bolt.circle"))
                                 .font(.title)
                                 .symbolRenderingMode(.palette)
-                                .foregroundStyle(.white, .green)
+                                .foregroundStyle(.white, isSaved(charger) ? .purple : .green)
                                 .padding(4)
                                 .background(.black.opacity(0.75), in: Circle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Select \(charger.name)")
+                        .accessibilityLabel("Select \(isSaved(charger) ? "saved charger " : "")\(charger.name)")
                     }
                 }
 
@@ -185,7 +193,7 @@ struct SearchView: View {
                         isLoadingFood = false
                         showsRoutePlanner = true
                     } label: {
-                        Label("Find My Stop", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                        Label("Search", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                     }
                 }
             }
@@ -269,7 +277,11 @@ struct SearchView: View {
                         ForEach(results.stops) { stop in
                             Button { select(stop.charger) } label: {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(stop.charger.name).font(.subheadline.bold()).lineLimit(1)
+                                    Label(stop.charger.name, systemImage: isSaved(stop.charger) ? "bookmark.fill" : "bolt.fill")
+                                        .font(.subheadline.bold()).lineLimit(1)
+                                    if isSaved(stop.charger) {
+                                        Text("Saved charger").font(.caption).foregroundStyle(.purple)
+                                    }
                                     Text(stop.summary).font(.caption)
                                 }
                                 .padding(10)
@@ -562,10 +574,7 @@ struct SearchView: View {
     }
 
     private func isSaved(_ charger: ChargerResult) -> Bool {
-        savedStops.contains {
-            abs($0.latitude - charger.coordinate.latitude) < 0.000_001
-                && abs($0.longitude - charger.coordinate.longitude) < 0.000_001
-        }
+        savedStops.contains { charger.matches(ChargerResult(savedStop: $0)) }
     }
 
     private func saveSelectedCharger() {

@@ -1,8 +1,10 @@
 import MapKit
 import SwiftUI
+import SwiftData
 
 struct FindMyStopView: View {
     @Environment(\.dismiss) private var dismiss
+    @Query private var savedStops: [SavedStop]
     @StateObject private var service = RouteStopService()
     @StateObject private var locationService = LocationService()
     @AppStorage("route.origin") private var origin = ""
@@ -72,14 +74,14 @@ struct FindMyStopView: View {
                     if isSearching {
                         ProgressView(service.progress)
                     } else {
-                        Button("Find My Stop", action: search)
+                        Button("Search", action: search)
                             .font(.headline)
                             .disabled(destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                                       (origin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && locationService.location == nil))
                     }
                 }
             }
-            .navigationTitle("Find My Stop")
+            .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -101,7 +103,8 @@ struct FindMyStopView: View {
                     location: locationService.location,
                     destinationQuery: destination.trimmingCharacters(in: .whitespacesAndNewlines),
                     window: StopWindow(unit: unit, lower: lower, upper: upper),
-                    maximumDetour: maximumDetour
+                    maximumDetour: maximumDetour,
+                    savedChargers: savedStops.map { ChargerResult(savedStop: $0) }
                 )
                 try Task.checkCancellation()
                 onResults(result)
