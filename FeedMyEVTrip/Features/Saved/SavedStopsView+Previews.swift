@@ -11,6 +11,11 @@ import SwiftUI
         .modelContainer(savedStopsPreviewContainer())
 }
 
+#Preview("Saved map") {
+    SavedStopsView(showMap: true)
+        .modelContainer(savedStopsPreviewContainer())
+}
+
 @MainActor
 private func savedStopsPreviewContainer() -> ModelContainer {
     let configuration = ModelConfiguration(isStoredInMemoryOnly: true)

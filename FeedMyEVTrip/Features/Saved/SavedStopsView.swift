@@ -8,6 +8,18 @@ struct SavedStopsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \SavedStop.savedAt, order: .reverse) private var savedStops: [SavedStop]
 
+    @State private var showsMap: Bool
+    @State private var selectedStopID: UUID?
+    @State private var cameraPosition: MapCameraPosition = .automatic
+
+    init(showMap: Bool = false) {
+        _showsMap = State(initialValue: showMap)
+    }
+
+    private var selectedStop: SavedStop? {
+        savedStops.first { $0.id == selectedStopID }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -18,15 +30,87 @@ struct SavedStopsView: View {
                         description: Text("Choose a charger on the map, then save it for later.")
                     )
                 } else {
-                    List {
-                        ForEach(savedStops) { stop in
-                            stopRow(stop)
+                    VStack(spacing: 0) {
+                        Picker("Saved stops view", selection: $showsMap) {
+                            Label("List", systemImage: "list.bullet").tag(false)
+                            Label("Map", systemImage: "map").tag(true)
                         }
-                        .onDelete(perform: delete)
+                        .pickerStyle(.segmented)
+                        .padding()
+
+                        if showsMap {
+                            savedMap
+                        } else {
+                            List {
+                                ForEach(savedStops) { stop in
+                                    stopRow(stop)
+                                }
+                                .onDelete(perform: delete)
+                            }
+                        }
                     }
                 }
             }
             .navigationTitle("Saved Stops")
+            .onChange(of: savedStops.map(\.id)) { _, _ in
+                if selectedStop == nil {
+                    selectedStopID = nil
+                }
+                cameraPosition = .automatic
+            }
+        }
+    }
+
+    private var savedMap: some View {
+        Map(position: $cameraPosition, selection: $selectedStopID) {
+            ForEach(savedStops) { stop in
+                Marker(
+                    stop.chargerName,
+                    systemImage: "bolt.fill",
+                    coordinate: CLLocationCoordinate2D(
+                        latitude: stop.latitude,
+                        longitude: stop.longitude
+                    )
+                )
+                .tint(.green)
+                .tag(stop.id)
+            }
+        }
+        .mapControls {
+            MapCompass()
+            MapScaleView()
+        }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                withAnimation {
+                    cameraPosition = .automatic
+                }
+            } label: {
+                Label("Show all", systemImage: "arrow.up.left.and.arrow.down.right")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+            .padding()
+            .accessibilityLabel("Show all saved locations")
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let stop = selectedStop {
+                VStack(alignment: .trailing, spacing: 0) {
+                    Button {
+                        selectedStopID = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityLabel("Close saved stop details")
+
+                    stopRow(stop)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding()
+                .background(.regularMaterial)
+            }
         }
     }
 

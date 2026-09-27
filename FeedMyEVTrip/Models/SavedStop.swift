@@ -10,6 +10,7 @@ final class SavedStop {
     var address: String
     var latitude: Double
     var longitude: Double
+    var mapItemIdentifier: String?
     var savedAt: Date
     var foodNames: String
 
@@ -18,6 +19,7 @@ final class SavedStop {
         address: String,
         latitude: Double,
         longitude: Double,
+        mapItemIdentifier: String? = nil,
         foodNames: [String]
     ) {
         id = UUID()
@@ -25,6 +27,7 @@ final class SavedStop {
         self.address = address
         self.latitude = latitude
         self.longitude = longitude
+        self.mapItemIdentifier = mapItemIdentifier
         savedAt = Date()
         self.foodNames = foodNames.joined(separator: "\n")
     }
