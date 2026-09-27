@@ -13,6 +13,7 @@ struct SearchView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Query private var savedStops: [SavedStop]
+    @Query private var savedChains: [SavedRestaurantChain]
     @StateObject private var locationService = LocationService()
     @StateObject private var searchService = MapSearchService()
     @AppStorage(FoodPreferenceKeys.maximumWalkingMinutes)
@@ -51,6 +52,8 @@ struct SearchView: View {
     @State private var isShowingStopArea = false
     @State private var overviewRegion: MKCoordinateRegion?
     @State private var selectedFoodDetails: SelectedFood?
+    @State private var chargerNoteDraft = ""
+    @State private var isSyncingChargerNote = false
     @State private var areaSearchTask: Task<Void, Never>?
     @State private var foodSearchTask: Task<Void, Never>?
 
@@ -74,8 +77,22 @@ struct SearchView: View {
             waitingForNearbyLocation = false
             centerOnCurrentLocation()
         }
+        .onChange(of: chargerNoteDraft) { _, newValue in
+            if isSyncingChargerNote {
+                isSyncingChargerNote = false
+                return
+            }
+            persistChargerNote(newValue)
+        }
+        .onChange(of: isLoadingFood) { _, isLoading in
+            if !isLoading { persistChargerNote(chargerNoteDraft) }
+        }
         .sheet(item: $selectedFoodDetails) { selection in
-            FoodDetailsView(food: selection.mapItem, distanceAndWalk: selection.distanceAndWalk)
+            FoodDetailsView(
+                food: selection.mapItem,
+                charger: selection.charger,
+                distanceAndWalk: selection.distanceAndWalk
+            )
                 .presentationDetents([.medium, .large])
         }
         .alert("Location unavailable", isPresented: Binding(
@@ -208,9 +225,14 @@ struct SearchView: View {
                     if let stop = routeResults?.stops.first(where: { $0.id == selectedCharger?.id }) {
                         Text(stop.summary).font(.caption).padding(.horizontal)
                     }
-                    StopResultPanel(state: panelState, onSave: saveSelectedCharger,
-                        onDirections: openSelectedChargerDirections, onToggleMapDetail: toggleMapDetail,
-                        onSelectFood: selectFoodDetails)
+                    StopResultPanel(
+                        state: panelState,
+                        note: $chargerNoteDraft,
+                        onSave: saveSelectedCharger,
+                        onDirections: openSelectedChargerDirections,
+                        onToggleMapDetail: toggleMapDetail,
+                        onSelectFood: selectFoodDetails
+                    )
                 }
             } else {
                 resultsList
@@ -314,7 +336,8 @@ struct SearchView: View {
         let stop = StopSummary(
             chargerName: selectedCharger.name,
             address: selectedCharger.address,
-            foodOptions: foodOptions
+            foodOptions: foodOptions,
+            metadata: selectedCharger.metadataSummary
         )
         return .selected(
             stop: stop,
@@ -439,20 +462,17 @@ struct SearchView: View {
         areaName: String
     ) async {
         do {
-            let places = try await searchService.searchChargers(in: region)
+            let found = try await AFDCChargerProvider.shared.chargers(in: region)
             try Task.checkCancellation()
-            chargers = mergeChargers(
-                existing: chargers,
-                new: places.map {
-                    ChargerResult(
-                        mapItem: $0.mapItem,
-                        placeIdentifier: $0.identifier
-                    )
-                }
-            )
+            chargers = found.filter { ChargerConnector.allows($0.connectorCodes) }
             message = chargers.isEmpty
-                ? "No chargers found near \(areaName)."
+                ? (found.isEmpty
+                    ? "No chargers found near \(areaName)."
+                    : "No chargers near \(areaName) match your connector preferences.")
                 : "Choose one of \(chargers.count) charging stops."
+            if let warning = AFDCChargerProvider.shared.warning {
+                message = (message ?? "") + " " + warning
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -466,6 +486,7 @@ struct SearchView: View {
         isEditingSearch = false
         panelSize = .medium
         selectedCharger = charger
+        replaceChargerNoteDraft(matchingSavedStop(for: charger)?.note ?? "")
         nearbyFood = []
         isLoadingFood = true
         isShowingStopArea = false
@@ -484,15 +505,14 @@ struct SearchView: View {
                     radius: maximumWalkingDistance,
                     categories: selectedFoodCategories
                 )
-                let localResults = places.map(\.mapItem)
-                    .filter {
+                let localResults = NearbyFoodOrdering.sorted(
+                    places.map(\.mapItem).filter {
                         charger.mapItem.location.distance(from: $0.location)
                             <= maximumWalkingDistance
-                    }
-                    .sorted {
-                        charger.mapItem.location.distance(from: $0.location)
-                            < charger.mapItem.location.distance(from: $1.location)
-                    }
+                    },
+                    from: charger.mapItem.location,
+                    savedChains: savedChains
+                )
 
                 guard selectedCharger?.id == selectedID else { return }
                 nearbyFood = localResults
@@ -533,6 +553,7 @@ struct SearchView: View {
         guard let selectedCharger else { return }
         selectedFoodDetails = SelectedFood(
             mapItem: food,
+            charger: selectedCharger.mapItem,
             distanceAndWalk: walkingEstimate(from: selectedCharger, to: food)
         )
     }
@@ -591,15 +612,46 @@ struct SearchView: View {
     }
 
     private func saveSelectedCharger() {
-        guard let selectedCharger, !isSaved(selectedCharger) else { return }
+        guard let selectedCharger, matchingSavedStop(for: selectedCharger) == nil else { return }
+        insertSavedCharger(selectedCharger, note: chargerNoteDraft)
+    }
 
+    private func persistChargerNote(_ text: String) {
+        guard let selectedCharger else { return }
+        if let existing = matchingSavedStop(for: selectedCharger) {
+            if existing.note != text { existing.note = text }
+            return
+        }
+        guard !text.isEmpty, !isLoadingFood else { return }
+        insertSavedCharger(selectedCharger, note: text)
+    }
+
+    private var savedNearbyFood: [SavedNearbyFood] {
+        nearbyFood.prefix(3).compactMap(SavedNearbyFood.init(mapItem:))
+    }
+
+    private func replaceChargerNoteDraft(_ text: String) {
+        guard chargerNoteDraft != text else { return }
+        isSyncingChargerNote = true
+        chargerNoteDraft = text
+    }
+
+    private func matchingSavedStop(for charger: ChargerResult) -> SavedStop? {
+        let stops = (try? modelContext.fetch(FetchDescriptor<SavedStop>())) ?? savedStops
+        return stops.first { charger.matches(ChargerResult(savedStop: $0)) }
+    }
+
+    private func insertSavedCharger(_ charger: ChargerResult, note: String) {
         let stop = SavedStop(
-            chargerName: selectedCharger.name,
-            address: selectedCharger.address,
-            latitude: selectedCharger.coordinate.latitude,
-            longitude: selectedCharger.coordinate.longitude,
-            mapItemIdentifier: selectedCharger.placeIdentifier,
-            foodNames: nearbyFood.prefix(3).compactMap(\.name)
+            chargerName: charger.name,
+            address: charger.address,
+            latitude: charger.coordinate.latitude,
+            longitude: charger.coordinate.longitude,
+            mapItemIdentifier: charger.placeIdentifier,
+            afdcStationID: charger.afdcStationID,
+            foodNames: [],
+            nearbyFood: savedNearbyFood,
+            note: note
         )
         modelContext.insert(stop)
     }
@@ -625,6 +677,8 @@ struct SearchView: View {
 
     private func searchMessage(for error: Error) -> String {
         switch error {
+        case let error as AFDCCatalogError:
+            return error.localizedDescription
         case MapSearchFailure.throttled:
             return "Map search is temporarily limited. Please try again shortly."
         case MapSearchFailure.networkUnavailable:
@@ -637,5 +691,5 @@ struct SearchView: View {
 
 #Preview {
     SearchView()
-        .modelContainer(for: SavedStop.self, inMemory: true)
+        .modelContainer(for: SavedStore.modelTypes, inMemory: true)
 }

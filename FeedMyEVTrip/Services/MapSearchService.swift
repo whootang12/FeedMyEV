@@ -106,7 +106,7 @@ final class MapSearchService: ObservableObject {
         if let data = defaults.data(forKey: cacheDefaultsKey),
            let envelope = try? JSONDecoder().decode(CacheEnvelope.self, from: data) {
             cacheEntries = envelope.entries.filter {
-                Date().timeIntervalSince($0.createdAt) < cacheLifetime
+                $0.kind != "chargers" && Date().timeIntervalSince($0.createdAt) < cacheLifetime
             }
         }
     }
@@ -134,29 +134,6 @@ final class MapSearchService: ObservableObject {
         return places.first?.searchPlace
     }
 
-    func searchChargers(in region: MKCoordinateRegion) async throws -> [SearchPlace] {
-        let key = regionCacheKey(prefix: "chargers", region: region)
-        let overlappingCachedPlaces = cachedChargerPlaces(overlapping: region)
-
-        if let exact = cacheEntries.first(where: { $0.key == key }) {
-            return merge(exact.places + overlappingCachedPlaces).map(\.searchPlace)
-        }
-
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = "EV charging station"
-        request.region = region
-        request.regionPriority = .required
-        request.resultTypes = .pointOfInterest
-        request.pointOfInterestFilter = MKPointOfInterestFilter(including: [.evCharger])
-
-        let response = try await execute(request: request)
-        let freshPlaces = response.mapItems.map(CachedPlace.init)
-        if !freshPlaces.isEmpty {
-            store(key: key, kind: "chargers", region: region, places: freshPlaces)
-        }
-        return merge(freshPlaces + overlappingCachedPlaces).map(\.searchPlace)
-    }
-
     func searchFood(
         around coordinate: CLLocationCoordinate2D,
         radius: CLLocationDistance,
@@ -182,6 +159,27 @@ final class MapSearchService: ObservableObject {
             store(key: key, kind: "food", region: nil, places: places)
         }
         return places.map(\.searchPlace)
+    }
+
+    func place(named name: String, near coordinate: CLLocationCoordinate2D) async throws -> MKMapItem? {
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = name
+        request.resultTypes = .pointOfInterest
+        request.region = MKCoordinateRegion(
+            center: coordinate,
+            latitudinalMeters: 2_000,
+            longitudinalMeters: 2_000
+        )
+        let response = try await execute(request: request)
+        let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        let nearby = response.mapItems.filter { origin.distance(from: $0.location) <= 2_000 }
+        if let match = nearby.first(where: { item in
+            item.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+                .localizedCaseInsensitiveCompare(name) == .orderedSame
+        }) {
+            return match
+        }
+        return nearby.first
     }
 
     private func execute(request: MKLocalSearch.Request) async throws -> MKLocalSearch.Response {

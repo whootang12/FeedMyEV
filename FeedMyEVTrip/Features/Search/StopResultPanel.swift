@@ -6,6 +6,7 @@ struct StopSummary {
     let chargerName: String
     let address: String
     let foodOptions: [FoodSummary]
+    var metadata: String? = nil
 }
 
 struct FoodSummary: Identifiable {
@@ -27,10 +28,27 @@ enum StopPanelState {
 
 struct StopResultPanel: View {
     let state: StopPanelState
+    @Binding var note: String
     var onSave: () -> Void = {}
     var onDirections: () -> Void = {}
     var onToggleMapDetail: () -> Void = {}
     var onSelectFood: (FoodSummary) -> Void = { _ in }
+
+    init(
+        state: StopPanelState,
+        note: Binding<String> = .constant(""),
+        onSave: @escaping () -> Void = {},
+        onDirections: @escaping () -> Void = {},
+        onToggleMapDetail: @escaping () -> Void = {},
+        onSelectFood: @escaping (FoodSummary) -> Void = { _ in }
+    ) {
+        self.state = state
+        _note = note
+        self.onSave = onSave
+        self.onDirections = onDirections
+        self.onToggleMapDetail = onToggleMapDetail
+        self.onSelectFood = onSelectFood
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -83,6 +101,10 @@ struct StopResultPanel: View {
             .foregroundStyle(.secondary)
             .lineLimit(2)
 
+        if let metadata = stop.metadata {
+            Text(metadata).font(.caption).foregroundStyle(.secondary)
+        }
+
         if isLoadingFood {
             ProgressView("Checking nearby food…")
                 .font(.subheadline)
@@ -132,6 +154,10 @@ struct StopResultPanel: View {
             }
             .buttonStyle(.bordered)
         }
+
+        TextField("Notes", text: $note, axis: .vertical)
+            .textFieldStyle(.roundedBorder)
+            .lineLimit(2...6)
 
         HStack {
             Button(action: onSave) {

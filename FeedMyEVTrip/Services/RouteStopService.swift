@@ -102,6 +102,9 @@ final class RouteStopService: ObservableObject {
 
     func find(originQuery: String, location: CLLocation?, destinationQuery: String,
               window: StopWindow, maximumDetour: Double, savedChargers: [ChargerResult]) async throws -> RouteStopResults {
+        progress = "Loading charger catalog…"
+        let catalog = try await AFDCChargerProvider.shared.loadChargers()
+        try Task.checkCancellation()
         progress = "Finding your route…"
         let origin: MKMapItem
         if originQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -127,46 +130,28 @@ final class RouteStopService: ObservableObject {
         let upperFraction = min(1, window.upper / total + (window.unit == .minutes ? 0.12 : 0.02))
         let start = geometry.length * lowerFraction
         let end = geometry.length * upperFraction
-        let count = min(10, max(2, Int(ceil((end - start) / 12_000)) + 1))
-        var candidates: [ChargerResult] = []
-        var keys = Set<String>()
+        progress = "Finding chargers along your route…"
+        let padding = 8_000 * MKMapPointsPerMeterAtLatitude(route.polyline.coordinate.latitude)
+        let bounds = route.polyline.boundingMapRect.insetBy(dx: -padding, dy: -padding)
+        let ranked = catalog.filter { bounds.contains(MKMapPoint($0.coordinate)) }
+            .map { ($0, geometry.projection(of: $0.coordinate)) }
+            .filter { $0.1.offset <= 8_000 && $0.1.along >= start && $0.1.along <= end }
+            .sorted { $0.1.offset < $1.1.offset }.map { $0.0 }
         var failures = 0
-        for index in 0..<count {
-            try Task.checkCancellation()
-            progress = "Searching route area \(index + 1) of \(count)…"
-            let distance = start + (end - start) * Double(index) / Double(count - 1)
-            let center = geometry.coordinate(at: distance)
-            let region = MKCoordinateRegion(center: center, latitudinalMeters: 24_000, longitudinalMeters: 24_000)
-            do {
-                for place in try await places.searchChargers(in: region) {
-                    let charger = ChargerResult(mapItem: place.mapItem, placeIdentifier: place.identifier)
-                    let position = geometry.projection(of: charger.coordinate)
-                    guard position.offset <= 8_000, position.along >= start, position.along <= end else { continue }
-                    let key = "\(Int((charger.coordinate.latitude * 10_000).rounded())):\(Int((charger.coordinate.longitude * 10_000).rounded()))"
-                    if keys.insert(key).inserted { candidates.append(charger) }
-                }
-            } catch {
-                try Task.checkCancellation()
-                if case MapSearchFailure.throttled = error { throw error }
-                failures += 1
-            }
-        }
-        if failures == count && candidates.isEmpty && savedChargers.isEmpty {
-            throw RouteFailure.message("Charger searches were unavailable along this route. Please try again shortly.")
-        }
-        let ranked = candidates.sorted {
-            geometry.projection(of: $0.coordinate).offset < geometry.projection(of: $1.coordinate).offset
-        }
         // Saved stops bypass the approximate corridor and discovery cap. Actual driving
         // routes below decide whether they meet the arrival window and detour limit.
         var savedCandidates: [ChargerResult] = []
-        for charger in savedChargers where !savedCandidates.contains(where: { $0.matches(charger) }) {
-            savedCandidates.append(charger)
+        for saved in savedChargers {
+            // Use the catalog's stable ID and current metadata for matching favorites.
+            let charger = catalog.first(where: { $0.matches(saved) }) ?? saved
+            if !savedCandidates.contains(where: { $0.matches(charger) }) { savedCandidates.append(charger) }
         }
+        let compatibleSaved = savedCandidates.filter { ChargerConnector.allows($0.connectorCodes) }
         let unsavedCandidates = ranked.filter { candidate in
-            !savedCandidates.contains { $0.matches(candidate) }
+            ChargerConnector.allows(candidate.connectorCodes)
+                && !compatibleSaved.contains { $0.matches(candidate) }
         }
-        let checkedCandidates = savedCandidates + Array(unsavedCandidates.prefix(12))
+        let checkedCandidates = compatibleSaved + Array(unsavedCandidates.prefix(12))
         var stops: [RouteStop] = []
         for (index, charger) in checkedCandidates.enumerated() {
             try Task.checkCancellation()
@@ -190,7 +175,9 @@ final class RouteStopService: ObservableObject {
         try Task.checkCancellation()
         var notices = ["Driving estimates can change. Detours exclude charging and meal time."]
         if failures > 0 { notices.append("Some areas or driving estimates were unavailable; results may be incomplete.") }
-        if unsavedCandidates.count > 12 || end - start > 108_000 { notices.append("A selection of route areas and nearby chargers was checked. Narrow the window for a more focused search.") }
+        if unsavedCandidates.count > 12 { notices.append("Driving estimates were checked for 12 nearby chargers plus saved stops. Narrow the window for a more focused search.") }
+        notices.append("Charger data: AFDC. U.S. public DC-fast stations; not live availability.")
+        if let warning = AFDCChargerProvider.shared.warning { notices.append(warning) }
         let segmentStart = geometry.length * min(1, window.lower / total)
         let segmentEnd = geometry.length * min(1, window.upper / total)
         let segmentCoordinates = (0...100).map { index in
