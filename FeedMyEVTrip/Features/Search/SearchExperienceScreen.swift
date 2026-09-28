@@ -330,7 +330,6 @@ private struct SearchExperiencePanel: View {
             } else {
                 SearchExperiencePanelHeader(
                     title: selectedDestination.map { LocalizedStringKey($0.title) } ?? panelTitle,
-                    showsEdit: state.showsJourneySummary,
                     showsSearch: false,
                     showsClear: selectedDestination != nil
                         || state.phase == .navigationReady
@@ -1033,7 +1032,6 @@ private struct NearbyPreferencesContent: View {
 
 private struct SearchExperiencePanelHeader: View {
     let title: LocalizedStringKey
-    let showsEdit: Bool
     let showsSearch: Bool
     let showsClear: Bool
     let onClear: () -> Void
@@ -1065,9 +1063,6 @@ private struct SearchExperiencePanelHeader: View {
                     if showsSearch {
                         Button("Search") {}
                             .buttonStyle(.bordered)
-                    } else if showsEdit {
-                        Button("Edit journey") {}
-                            .font(.subheadline.weight(.semibold))
                     }
                 }
             }

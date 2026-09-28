@@ -8,6 +8,7 @@ struct ChargingResultCard: View {
     let foodSummary: String
     let connectorSummary: String
     let isSaved: Bool
+    let action: () -> Void
 
     init(
         name: String,
@@ -16,7 +17,8 @@ struct ChargingResultCard: View {
         detour: String,
         foodSummary: String,
         connectorSummary: String,
-        isSaved: Bool
+        isSaved: Bool,
+        action: @escaping () -> Void = {}
     ) {
         self.name = name
         self.address = address
@@ -25,6 +27,7 @@ struct ChargingResultCard: View {
         self.foodSummary = foodSummary
         self.connectorSummary = connectorSummary
         self.isSaved = isSaved
+        self.action = action
     }
 
     init(result: SearchExperiencePreviewState.Result) {
@@ -35,12 +38,13 @@ struct ChargingResultCard: View {
             detour: result.detour,
             foodSummary: result.foodSummary,
             connectorSummary: result.connectorSummary,
-            isSaved: result.isSaved
+            isSaved: result.isSaved,
+            action: {}
         )
     }
 
     var body: some View {
-        Button {} label: {
+        Button(action: action) {
             VStack(alignment: .leading, spacing: 11) {
                 HStack(alignment: .top) {
                     Image(systemName: isSaved ? "bookmark.fill" : "bolt.fill")

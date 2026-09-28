@@ -16,6 +16,7 @@ struct SearchView: View {
     @Query private var savedChains: [SavedRestaurantChain]
     @StateObject private var locationService = LocationService()
     @StateObject private var searchService = MapSearchService()
+    @StateObject private var locationCompleter = LocationSearchCompleter()
     @AppStorage(FoodPreferenceKeys.maximumWalkingMinutes)
     private var maximumWalkingMinutes = 15
     @AppStorage(FoodPreferenceKeys.includesRestaurants)
@@ -26,20 +27,46 @@ struct SearchView: View {
     private var includesBakeries = true
     @State private var cameraPosition: MapCameraPosition
     @State private var destination = ""
+    @State private var isPlaceSearchPresented = false
+    @State private var selectedDestinationPlace: SearchPlace?
+    @State private var selectedDestinationSubtitle: String?
+    @State private var destinationSelectionTask: Task<Void, Never>?
     @State private var routeDestination = ""
     @State private var resultAreaName = "your location"
     @State private var isEditingSearch = true
     @State private var searchMode = SearchMode.nearby
-    @State private var panelSize = PanelSize.compact
+    @State private var showsNearbyResults = false
+    @State private var panelSize = SearchDrawerSize.compact
     @State private var hasSearched = false
     @State private var waitingForNearbyLocation = false
+    @State private var searchesAfterLocationRequest = false
     @State private var resultsRegion: MKCoordinateRegion?
 
     private enum SearchMode: String, CaseIterable {
         case route = "Along a route", nearby = "Near a place"
     }
-    private enum PanelSize { case compact, medium, expanded }
+    private enum ResultsTab: CaseIterable, Identifiable {
+        case results, restaurants, charging
+
+        var id: Self { self }
+        var systemImage: String {
+            switch self {
+            case .results: "list.bullet"
+            case .restaurants: "fork.knife"
+            case .charging: "bolt.fill"
+            }
+        }
+        var accessibilityTitle: LocalizedStringKey {
+            switch self {
+            case .results: "Charging results"
+            case .restaurants: "Restaurant preferences"
+            case .charging: "Charging needs"
+            }
+        }
+    }
     @State private var routeResults: RouteStopResults?
+    @State private var resultsTab = ResultsTab.results
+    @State private var isResultsStopWindowExpanded = false
     @State private var chargers: [ChargerResult] = []
     @State private var selectedCharger: ChargerResult?
     @State private var nearbyFood: [MKMapItem] = []
@@ -67,19 +94,34 @@ struct SearchView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            VStack(spacing: 0) {
+            ZStack(alignment: .bottom) {
                 mapView
-                searchPanel
-                    .frame(height: panelHeight(available: geometry.size.height))
-                    .background(.regularMaterial)
-                    .clipShape(UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24))
+                    .ignoresSafeArea(edges: .top)
+
+                if showsSearchHere && routeResults == nil && searchMode == .nearby && selectedCharger == nil && !isSearching {
+                    Button("Search here", action: searchVisibleRegion)
+                        .buttonStyle(.borderedProminent)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .padding(.top, geometry.safeAreaInsets.top + 10)
+                }
+
+                SearchDrawerSurface(
+                    size: $panelSize,
+                    availableHeight: geometry.size.height
+                ) {
+                    searchPanel
+                }
             }
-            .background(.regularMaterial)
         }
         .onChange(of: locationService.location?.timestamp) { _, _ in
             guard waitingForNearbyLocation else { return }
             waitingForNearbyLocation = false
-            centerOnCurrentLocation()
+            if searchesAfterLocationRequest {
+                searchesAfterLocationRequest = false
+                centerOnCurrentLocation()
+            } else {
+                moveMapToCurrentLocation()
+            }
         }
         .onChange(of: chargerNoteDraft) { _, newValue in
             if isSyncingChargerNote {
@@ -87,6 +129,10 @@ struct SearchView: View {
                 return
             }
             persistChargerNote(newValue)
+        }
+        .onChange(of: destination) { _, query in
+            guard isPlaceSearchPresented else { return }
+            locationCompleter.update(query: query, region: visibleRegion)
         }
         .onChange(of: isLoadingFood) { _, isLoading in
             if !isLoading { persistChargerNote(chargerNoteDraft) }
@@ -106,6 +152,10 @@ struct SearchView: View {
             Button("OK", role: .cancel) { locationService.clearError(); waitingForNearbyLocation = false }
         } message: {
             Text(locationService.errorMessage ?? "Please try again.")
+        }
+        .onDisappear {
+            destinationSelectionTask?.cancel()
+            locationCompleter.clear()
         }
     }
 
@@ -152,110 +202,90 @@ struct SearchView: View {
             if suppressesNextCameraPrompt { suppressesNextCameraPrompt = false }
             else if hasSearched { showsSearchHere = true }
         }
-        .overlay(alignment: .top) {
-            if isStartingScreen {
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-
-                    TextField("Search here", text: $destination)
-                        .textInputAutocapitalization(.words)
-                        .submitLabel(.search)
-                        .onSubmit(search)
-
-                    if !destination.isEmpty {
-                        Button("Clear search", systemImage: "xmark.circle.fill") {
-                            destination = ""
-                        }
-                        .labelStyle(.iconOnly)
-                        .foregroundStyle(.secondary)
-                    }
+        .overlay(alignment: .bottomTrailing) {
+            Button {
+                searchesAfterLocationRequest = false
+                if locationService.location != nil {
+                    moveMapToCurrentLocation()
+                } else {
+                    waitingForNearbyLocation = true
+                    locationService.requestCurrentLocation()
                 }
-                .padding(.horizontal, 14)
-                .frame(height: 50)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 15))
-                .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-            } else if showsSearchHere && routeResults == nil && searchMode == .nearby && !isEditingSearch && selectedCharger == nil && !isSearching {
-                Button("Search this area", action: searchVisibleRegion)
-                    .buttonStyle(.borderedProminent).padding(10)
+            } label: {
+                Image(systemName: "location.fill")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 42, height: 42)
             }
-        }
-    }
-
-    private func panelHeight(available: CGFloat) -> CGFloat {
-        switch panelSize {
-        case .compact: return min(160, available * 0.3)
-        case .medium: return available * 0.52
-        case .expanded: return available * 0.88
+            .buttonStyle(.plain)
+            .foregroundStyle(.blue)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
+            .padding(.trailing, 12)
+            .padding(.bottom, panelSize.height(availableHeight: 800) + 12)
+            .accessibilityLabel("Go to current location")
         }
     }
 
     private var searchPanel: some View {
         VStack(spacing: 0) {
             VStack(spacing: 10) {
-                Capsule().fill(.secondary.opacity(0.5)).frame(width: 40, height: 5)
-                HStack {
-                    if selectedCharger != nil {
-                        Button(action: returnToResults) { Label("Results", systemImage: "chevron.left") }
-                        Spacer()
-                        Text("Charging stop").font(.headline)
-                    } else {
-                        Text(isStartingScreen ? "Nearby" : (isEditingSearch ? "Search" : "Charging stops"))
-                            .font(.title3.bold())
-                        Spacer()
-                        if isEditingSearch && hasSearched {
-                            Button("Back to results") { isEditingSearch = false; panelSize = .medium }
+                SearchDrawerHandle()
+
+                if !isStartingScreen {
+                    HStack {
+                        if selectedCharger != nil {
+                            Button(action: returnToResults) { Label("Results", systemImage: "chevron.left") }
+                            Spacer()
+                            Text("Charging stop").font(.headline)
+                        } else if isEditingSearch && searchMode == .route {
+                            Text("Route").font(.title3.bold())
+                            Spacer()
+                            Button("Close route", systemImage: "xmark", action: closeRoutePlanning)
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.plain)
+                        } else if showsNearbyResults {
+                            Text("Nearby Chargers").font(.title3.bold())
+                            Spacer()
+                            Button("Close nearby chargers", systemImage: "xmark", action: closeNearbyResults)
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.plain)
                         } else if !isEditingSearch {
-                            Button("Edit search", action: editSearch)
+                            Spacer()
+                            Button("Close results", systemImage: "xmark", action: closeResults)
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.plain)
+                        } else {
+                            Text(isEditingSearch ? "Search" : "Charging stops")
+                                .font(.title3.bold())
+                            Spacer()
+                            if isEditingSearch && hasSearched {
+                                Button("Back to results") { isEditingSearch = false; panelSize = .medium }
+                            }
+                        }
+                        if searchMode != .route {
+                            Button {
+                                withAnimation { panelSize = panelSize == .expanded ? .medium : .expanded }
+                            } label: {
+                                Image(systemName: panelSize == .expanded ? "chevron.down" : "chevron.up")
+                            }
+                            .accessibilityLabel(panelSize == .expanded ? "Collapse panel" : "Expand panel")
                         }
                     }
-                    if isStartingScreen {
-                        Button("Search", action: search)
-                            .buttonStyle(.bordered)
-                    } else {
-                        Button {
-                            withAnimation { panelSize = panelSize == .expanded ? .medium : .expanded }
-                        } label: {
-                            Image(systemName: panelSize == .expanded ? "chevron.down" : "chevron.up")
-                        }
-                        .accessibilityLabel(panelSize == .expanded ? "Collapse panel" : "Expand panel")
-                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
                 }
             }
-            .padding()
             .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 20).onEnded { value in
-                withAnimation {
-                    if value.translation.height < -25 { panelSize = panelSize == .compact ? .medium : .expanded }
-                    if value.translation.height > 25 { panelSize = panelSize == .expanded ? .medium : .compact }
-                }
-            })
 
-            if isStartingScreen {
-                nearbyPreferences
-            } else if isEditingSearch {
-                Picker("Search mode", selection: $searchMode) {
-                    ForEach(SearchMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented).padding(.horizontal)
-                if searchMode == .route {
-                    FindMyStopView(destination: $routeDestination, onResults: showRouteResults)
-                } else {
-                    Form {
-                        Section("Search nearby") {
-                            TextField("Town or address", text: $destination)
-                                .onSubmit(search)
-                            Button("Search", action: search)
-                                .disabled(destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            Button {
-                                waitingForNearbyLocation = true
-                                locationService.requestCurrentLocation()
-                            } label: { Label("Use my location", systemImage: "location.fill") }
-                        }
-                    }
-                }
+            if isPlaceSearchPresented {
+                PlaceSearchPanel(
+                    query: $destination,
+                    suggestions: locationCompleter.suggestions,
+                    onCancel: cancelPlaceSearch,
+                    onSelect: selectLocationSuggestion
+                )
+            } else if isEditingSearch && searchMode == .route {
+                FindMyStopView(destination: $routeDestination, onResults: showRouteResults)
             } else if selectedCharger != nil {
                 ScrollView {
                     if let stop = routeResults?.stops.first(where: { $0.id == selectedCharger?.id }) {
@@ -270,8 +300,44 @@ struct SearchView: View {
                         onSelectFood: selectFoodDetails
                     )
                 }
+            } else if showsNearbyResults {
+                resultsList(includesStopWindow: false)
+            } else if let selectedDestinationPlace {
+                SelectedDestinationPanel(
+                    name: destination,
+                    subtitle: selectedDestinationSubtitle,
+                    distance: distanceDescription(to: selectedDestinationPlace),
+                    driveTime: "3h 14min",
+                    maximumWalkingMinutes: maximumWalkingMinutes,
+                    onClear: clearSelectedDestination,
+                    onRoute: startRouteToSelectedDestination,
+                    onNearbyChargers: searchNearbySelectedDestination
+                )
+            } else if isStartingScreen {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        SearchLocationBar(text: $destination, onSearch: search, onFocus: beginPlaceSearch)
+                        SearchPreferenceSections(maximumWalkingMinutes: maximumWalkingMinutes)
+                            .padding(.horizontal, 16)
+                    }
+                }
+                .scrollBounceBehavior(.basedOnSize)
+            } else if isEditingSearch {
+                Form {
+                    Section("Search nearby") {
+                        TextField("Town or address", text: $destination)
+                            .onSubmit(search)
+                        Button("Search", action: search)
+                            .disabled(destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button {
+                            searchesAfterLocationRequest = true
+                            waitingForNearbyLocation = true
+                            locationService.requestCurrentLocation()
+                        } label: { Label("Use my location", systemImage: "location.fill") }
+                    }
+                }
             } else {
-                resultsList
+                resultsList(includesStopWindow: true)
             }
         }
     }
@@ -312,50 +378,242 @@ struct SearchView: View {
         .buttonStyle(.plain)
     }
 
-    private var resultsList: some View {
+    private func resultsList(includesStopWindow: Bool) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                if let results = routeResults {
-                    Text("To \(results.destinationName)").font(.headline)
-                    Text(results.windowDescription).font(.subheadline)
-                    Label("Orange shows the approximate stop window", systemImage: "line.diagonal")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Text("Near \(resultAreaName)").font(.headline)
-                }
-                if isSearching { ProgressView("Finding chargers…") }
-                if let message { Text(message).font(.subheadline).foregroundStyle(.secondary) }
-                ForEach(chargers) { charger in
-                    Button { select(charger) } label: {
-                        HStack {
-                            Image(systemName: isSaved(charger) ? "bookmark.fill" : "bolt.fill")
-                                .foregroundStyle(isSaved(charger) ? .purple : .green)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(charger.name).font(.headline)
-                                if isSaved(charger) { Text("Saved charger").font(.caption).foregroundStyle(.purple) }
-                                if let stop = routeResults?.stops.first(where: { $0.id == charger.id }) {
-                                    Text(stop.summary).font(.caption)
-                                } else { Text(charger.address).font(.caption) }
+                resultsTabs
+
+                switch resultsTab {
+                case .results:
+                    if includesStopWindow {
+                        DisclosureGroup(isExpanded: $isResultsStopWindowExpanded) {
+                            Text("Results prioritize chargers within the currently selected 100–150 mile window.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 8)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Target Stop Window").font(.headline)
+                                Text(routeResults?.windowDescription ?? "100–150 miles applied")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
-                            Spacer()
-                            Image(systemName: "chevron.right").foregroundStyle(.secondary)
                         }
-                        .padding().frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                        .padding(14)
+                        .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
                     }
-                    .buttonStyle(.plain)
+
+                    if isSearching { ProgressView("Finding chargers…") }
+                    if let message { Text(message).font(.subheadline).foregroundStyle(.secondary) }
+                    ForEach(chargers) { charger in
+                        let stop = routeResults?.stops.first(where: { $0.id == charger.id })
+                        ChargingResultCard(
+                            name: charger.name,
+                            address: charger.address,
+                            arrival: stop.map { "\(Int($0.arrivalMinutes.rounded())) min ahead" } ?? "Nearby",
+                            detour: stop.map { "+\(Int($0.detourMinutes.rounded(.up))) min detour" } ?? "In this area",
+                            foodSummary: "Select to find restaurants within your walking preference",
+                            connectorSummary: charger.metadataSummary ?? "Charging details unavailable",
+                            isSaved: isSaved(charger),
+                            action: { select(charger) }
+                        )
+                    }
+                    if let notice = routeResults?.notice {
+                        Text(notice).font(.caption).foregroundStyle(.secondary)
+                    }
+                case .restaurants:
+                    SearchPreferenceSections(maximumWalkingMinutes: maximumWalkingMinutes)
+                case .charging:
+                    chargingPreferencesCard
                 }
-                if let notice = routeResults?.notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
             }
             .padding()
         }
     }
 
+    private var resultsTabs: some View {
+        HStack(spacing: 8) {
+            ForEach(ResultsTab.allCases) { tab in
+                Button {
+                    withAnimation(.snappy) { resultsTab = tab }
+                } label: {
+                    Image(systemName: tab.systemImage)
+                        .font(.title3)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(resultsTab == tab ? .white : .primary)
+                .background(resultsTab == tab ? Color.blue : Color.clear, in: Capsule())
+                .accessibilityLabel(tab.accessibilityTitle)
+                .accessibilityAddTraits(resultsTab == tab ? .isSelected : [])
+            }
+        }
+        .padding(5)
+        .background(.secondary.opacity(0.12), in: Capsule())
+    }
+
+    private var chargingPreferencesCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Charging needs").font(.headline).padding(.bottom, 8)
+            preferenceRow(title: "Connector", value: "All", systemImage: "powerplug")
+            Divider()
+            preferenceRow(title: "Network", value: "All", systemImage: "network")
+            Divider()
+            preferenceRow(title: "Speed", value: "150+ kW", systemImage: "bolt.fill")
+        }
+        .padding(14)
+        .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
+    }
+
     private func editSearch() {
         cancelActiveSearches()
         isSearching = false
+        hasSearched = false
+        selectedCharger = nil
+        routeResults = nil
+        beginPlaceSearch()
+    }
+
+    private func beginPlaceSearch() {
+        destinationSelectionTask?.cancel()
+        selectedDestinationPlace = nil
+        selectedDestinationSubtitle = nil
+        destination = ""
+        showsNearbyResults = false
+        isPlaceSearchPresented = true
+        panelSize = .expanded
+        locationCompleter.clear()
+    }
+
+    private func cancelPlaceSearch() {
+        destinationSelectionTask?.cancel()
+        isPlaceSearchPresented = false
+        destination = ""
+        locationCompleter.clear()
+        panelSize = .compact
+    }
+
+    private func selectLocationSuggestion(_ suggestion: LocationSearchSuggestion) {
+        destinationSelectionTask?.cancel()
+        destinationSelectionTask = Task {
+            do {
+                guard let place = try await searchService.resolveDestination(suggestion.query) else {
+                    message = "We couldn’t find that destination."
+                    return
+                }
+                try Task.checkCancellation()
+                destination = suggestion.title
+                selectedDestinationSubtitle = suggestion.subtitle.isEmpty ? nil : suggestion.subtitle
+                selectedDestinationPlace = place
+                isPlaceSearchPresented = false
+                locationCompleter.clear()
+                panelSize = .expanded
+                suppressesNextCameraPrompt = true
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: place.mapItem.location.coordinate,
+                    latitudinalMeters: 10_000,
+                    longitudinalMeters: 10_000
+                ))
+            } catch is CancellationError {
+                return
+            } catch {
+                message = searchMessage(for: error)
+            }
+        }
+    }
+
+    private func clearSelectedDestination() {
+        selectedDestinationPlace = nil
+        selectedDestinationSubtitle = nil
+        destination = ""
+        showsNearbyResults = false
+        hasSearched = false
+        panelSize = .compact
+    }
+
+    private func distanceDescription(to place: SearchPlace) -> String {
+        guard let location = locationService.location else {
+            return "Distance from current location unavailable"
+        }
+        let miles = location.distance(from: place.mapItem.location) / 1_609.344
+        return "\(Int(miles.rounded()).formatted()) miles away"
+    }
+
+    private func startRouteToSelectedDestination() {
+        routeDestination = destination
+        showsNearbyResults = false
+        searchMode = .route
+        hasSearched = true
         isEditingSearch = true
-        panelSize = .medium
+        panelSize = .expanded
+    }
+
+    private func closeRoutePlanning() {
+        cancelActiveSearches()
+        routeResults = nil
+        chargers = []
+        selectedCharger = nil
+        showsNearbyResults = false
+        isEditingSearch = true
+        searchMode = .nearby
+        hasSearched = false
+        panelSize = selectedDestinationPlace == nil ? .compact : .expanded
+    }
+
+    private func closeResults() {
+        cancelActiveSearches()
+        chargers = []
+        selectedCharger = nil
+        routeResults = nil
+        message = nil
+        resultsTab = .results
+        isResultsStopWindowExpanded = false
+        showsNearbyResults = false
+        hasSearched = false
+        isEditingSearch = true
+        searchMode = .nearby
+        if selectedDestinationPlace == nil {
+            destination = ""
+            panelSize = .compact
+        } else {
+            panelSize = .expanded
+        }
+    }
+
+    private func closeNearbyResults() {
+        cancelActiveSearches()
+        chargers = []
+        selectedCharger = nil
+        message = nil
+        resultsTab = .results
+        showsNearbyResults = false
+        isSearching = false
+        isEditingSearch = true
+        searchMode = .nearby
+        hasSearched = false
+        panelSize = selectedDestinationPlace == nil ? .compact : .expanded
+    }
+
+    private func searchNearbySelectedDestination() {
+        searchMode = .nearby
+        showsNearbyResults = true
+        searchAroundSelectedDestination()
+    }
+
+    private func searchAroundSelectedDestination() {
+        guard let selectedDestinationPlace else {
+            search()
+            return
+        }
+
+        let areaName = destination.trimmingCharacters(in: .whitespacesAndNewlines)
+        let region = MKCoordinateRegion(
+            center: selectedDestinationPlace.mapItem.location.coordinate,
+            latitudinalMeters: 10_000,
+            longitudinalMeters: 10_000
+        )
+        beginNearbySearch(in: region, areaName: areaName.isEmpty ? "this place" : areaName)
     }
 
     private func returnToResults() {
@@ -374,6 +632,7 @@ struct SearchView: View {
     private func showRouteResults(_ results: RouteStopResults) {
         cancelActiveSearches()
         routeResults = results
+        showsNearbyResults = false
         isEditingSearch = false
         hasSearched = true
         panelSize = .medium
@@ -421,10 +680,30 @@ struct SearchView: View {
 
     private func search() {
         let trimmedDestination = destination.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedDestination.isEmpty else { return }
+        if trimmedDestination.isEmpty || trimmedDestination.localizedCaseInsensitiveCompare("My location") == .orderedSame {
+            searchesAfterLocationRequest = true
+            waitingForNearbyLocation = true
+            locationService.requestCurrentLocation()
+            return
+        }
 
+        beginNearbySearch(in: nil, areaName: trimmedDestination)
+    }
+
+    private func searchVisibleRegion() {
+        guard let visibleRegion else { return }
+        searchMode = .nearby
+        showsNearbyResults = true
+        beginNearbySearch(in: visibleRegion, areaName: "this area")
+    }
+
+    private func beginNearbySearch(in region: MKCoordinateRegion?, areaName: String) {
         cancelActiveSearches()
-        resultAreaName = trimmedDestination
+        resultAreaName = areaName
+        resultsTab = .results
+        isResultsStopWindowExpanded = false
+        searchMode = .nearby
+        showsNearbyResults = true
         isEditingSearch = false
         hasSearched = true
         panelSize = .medium
@@ -437,27 +716,32 @@ struct SearchView: View {
         isLoadingFood = false
         isShowingStopArea = false
         overviewRegion = nil
+        showsSearchHere = false
 
         areaSearchTask = Task {
             do {
-                guard let place = try await searchService.resolveDestination(trimmedDestination) else {
-                    message = "We couldn’t find that destination."
-                    isSearching = false
-                    return
+                let searchRegion: MKCoordinateRegion
+                if let region {
+                    searchRegion = region
+                } else {
+                    guard let place = try await searchService.resolveDestination(areaName) else {
+                        message = "We couldn’t find that destination."
+                        isSearching = false
+                        return
+                    }
+                    searchRegion = MKCoordinateRegion(
+                        center: place.mapItem.location.coordinate,
+                        latitudinalMeters: 10_000,
+                        longitudinalMeters: 10_000
+                    )
                 }
 
-                let region = MKCoordinateRegion(
-                    center: place.mapItem.location.coordinate,
-                    latitudinalMeters: 10_000,
-                    longitudinalMeters: 10_000
-                )
                 suppressesNextCameraPrompt = true
-                showsSearchHere = false
                 withAnimation(.easeInOut(duration: 0.45)) {
-                    cameraPosition = .region(region)
+                    cameraPosition = .region(searchRegion)
                 }
                 try Task.checkCancellation()
-                await loadChargers(in: region, areaName: trimmedDestination)
+                await loadChargers(in: searchRegion, areaName: areaName)
             } catch is CancellationError {
                 return
             } catch {
@@ -468,34 +752,27 @@ struct SearchView: View {
         }
     }
 
-    private func searchVisibleRegion() {
-        guard let visibleRegion else { return }
-        routeResults = nil
-        chargers = []
-        resultAreaName = "this area"
+    private func moveMapToCurrentLocation() {
+        guard let location = locationService.location else { return }
 
-        cancelActiveSearches()
-        showsSearchHere = false
-        isSearching = true
-        message = nil
-        selectedCharger = nil
-        nearbyFood = []
-        isLoadingFood = false
-        isShowingStopArea = false
-        overviewRegion = nil
-
-        areaSearchTask = Task {
-            await loadChargers(
-                in: visibleRegion,
-                areaName: "this area"
-            )
-            isSearching = false
+        let region = MKCoordinateRegion(
+            center: location.coordinate,
+            latitudinalMeters: 10_000,
+            longitudinalMeters: 10_000
+        )
+        searchMode = .nearby
+        suppressesNextCameraPrompt = true
+        withAnimation(.easeInOut(duration: 0.45)) {
+            cameraPosition = .region(region)
         }
+        showsSearchHere = true
     }
 
     private func centerOnCurrentLocation() {
         guard let location = locationService.location else { return }
         resultAreaName = "your location"
+        searchMode = .nearby
+        showsNearbyResults = true
         isEditingSearch = false
         hasSearched = true
         panelSize = .medium
