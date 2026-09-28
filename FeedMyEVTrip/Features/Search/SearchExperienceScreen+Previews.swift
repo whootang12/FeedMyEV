@@ -17,35 +17,23 @@ import SwiftUI
     SearchExperienceScreen(state: .navigationReady)
 }
 
-#Preview("5 · Destination suggestions") {
-    SearchExperienceScreen(state: .destinationSuggestions)
+#Preview("5 · Nearby charger results") {
+    SearchExperienceScreen(state: .chargerResults)
 }
 
-#Preview("6 · Choose stop intent") {
-    SearchExperienceScreen(state: .journeyReady)
-}
-
-#Preview("7 · Named stopping area") {
-    SearchExperienceScreen(state: .namedArea)
-}
-
-#Preview("8 · Searching") {
+#Preview("6 · Searching") {
     SearchExperienceScreen(state: .searching)
 }
 
-#Preview("9 · Recommended stops") {
-    SearchExperienceScreen(state: .results)
-}
-
-#Preview("10 · No matching stops") {
+#Preview("7 · No matching stops") {
     SearchExperienceScreen(state: .empty)
 }
 
-#Preview("11 · Lookup failure") {
+#Preview("8 · Lookup failure") {
     SearchExperienceScreen(state: .failure)
 }
 
-#Preview("12 · Map moved") {
+#Preview("9 · Map moved") {
     SearchExperienceScreen(state: .mapMoved)
 }
 
@@ -95,6 +83,36 @@ private extension SearchExperiencePreviewState {
         stopIntentSummary: "286 miles away",
         namedAreaText: nil,
         progressText: "4 hr 18 min",
+        message: nil,
+        results: .sampleResults,
+        mapState: .results
+    )
+
+    static let chargerResults = SearchExperiencePreviewState(
+        phase: .chargerResults,
+        destinationText: "Richmond, VA",
+        destinationDetail: "Virginia, United States",
+        suggestions: [],
+        originText: "My location",
+        stopIntentTitle: nil,
+        stopIntentSummary: "100–150 miles",
+        namedAreaText: nil,
+        progressText: nil,
+        message: "Compatible chargers along your route",
+        results: .sampleResults,
+        mapState: .results
+    )
+
+    static let restaurantPreferences = SearchExperiencePreviewState(
+        phase: .restaurantPreferences,
+        destinationText: "Richmond, VA",
+        destinationDetail: "Virginia, United States",
+        suggestions: [],
+        originText: "My location",
+        stopIntentTitle: nil,
+        stopIntentSummary: nil,
+        namedAreaText: nil,
+        progressText: nil,
         message: nil,
         results: [],
         mapState: .journey
@@ -240,17 +258,17 @@ private extension SearchExperiencePreviewState {
     )
 
     static let mapMoved = SearchExperiencePreviewState(
-        phase: .results,
-        destinationText: "Richmond",
-        destinationDetail: "Richmond, VA, United States",
-        suggestions: [],
-        originText: "Current location · Pennington, NJ",
-        stopIntentTitle: "Find a stop ahead",
-        stopIntentSummary: "60–120 minutes ahead · Maximum 20 minute detour",
+        phase: .starting,
+        destinationText: "",
+        destinationDetail: nil,
+        suggestions: .destinationSamples,
+        originText: "Current location",
+        stopIntentTitle: nil,
+        stopIntentSummary: nil,
         namedAreaText: nil,
         progressText: nil,
-        message: "Move the map to explore another area.",
-        results: .sampleResults,
+        message: nil,
+        results: [],
         mapState: .panned
     )
 }

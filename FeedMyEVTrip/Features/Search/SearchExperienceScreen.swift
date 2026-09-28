@@ -13,20 +13,24 @@ struct SearchExperienceScreen: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            SearchExperienceMap(
-                state: state.mapState,
-                showsStartingSearch: false,
-                suggestions: state.suggestions,
-                onSelectDestination: { selectedDestination = $0 }
-            )
+        GeometryReader { geometry in
+            ZStack(alignment: .bottom) {
+                SearchExperienceMap(
+                    state: state.mapState,
+                    showsStartingSearch: false,
+                    suggestions: state.suggestions,
+                    topSafeAreaInset: geometry.safeAreaInsets.top,
+                    onSelectDestination: { selectedDestination = $0 }
+                )
                 .ignoresSafeArea(edges: .top)
 
-            SearchExperiencePanel(
-                state: state,
-                selectedDestination: selectedDestination,
-                onClearDestination: { selectedDestination = nil }
-            )
+                SearchExperiencePanel(
+                    state: state,
+                    selectedDestination: selectedDestination,
+                    onClearDestination: { selectedDestination = nil }
+                )
+                .ignoresSafeArea(edges: .bottom)
+            }
         }
         .background(Color(uiColor: .systemGroupedBackground))
     }
@@ -37,6 +41,8 @@ struct SearchExperiencePreviewState {
         case starting
         case destinationSelected
         case navigationReady
+        case chargerResults
+        case restaurantPreferences
         case placeSearch
         case destinationEntry
         case journeyReady
@@ -92,8 +98,13 @@ struct SearchExperiencePreviewState {
         phase != .starting
             && phase != .destinationSelected
             && phase != .navigationReady
+            && phase != .chargerResults
+            && phase != .restaurantPreferences
             && phase != .placeSearch
             && phase != .destinationEntry
+            && phase != .searching
+            && phase != .empty
+            && phase != .failure
     }
 }
 
@@ -101,6 +112,7 @@ private struct SearchExperienceMap: View {
     let state: SearchExperiencePreviewState.MapState
     let showsStartingSearch: Bool
     let suggestions: [SearchExperiencePreviewState.Suggestion]
+    let topSafeAreaInset: CGFloat
     let onSelectDestination: (SearchExperiencePreviewState.Suggestion) -> Void
     @State private var cameraPosition: MapCameraPosition
     @State private var showsSearchHere: Bool
@@ -110,11 +122,13 @@ private struct SearchExperienceMap: View {
         state: SearchExperiencePreviewState.MapState,
         showsStartingSearch: Bool,
         suggestions: [SearchExperiencePreviewState.Suggestion],
+        topSafeAreaInset: CGFloat,
         onSelectDestination: @escaping (SearchExperiencePreviewState.Suggestion) -> Void
     ) {
         self.state = state
         self.showsStartingSearch = showsStartingSearch
         self.suggestions = suggestions
+        self.topSafeAreaInset = topSafeAreaInset
         self.onSelectDestination = onSelectDestination
         _cameraPosition = State(initialValue: .region(state.region))
         _showsSearchHere = State(initialValue: state.showsSearchHere)
@@ -241,8 +255,7 @@ private struct SearchExperienceMap: View {
                     .buttonStyle(.borderedProminent)
                 }
             }
-            .safeAreaPadding(.top)
-            .padding(.top, 12)
+            .padding(.top, topSafeAreaInset + 12)
         }
     }
 
@@ -271,11 +284,18 @@ private struct SearchExperienceMapMarker: View {
 }
 
 private struct SearchExperiencePanel: View {
+    private enum DrawerHeight {
+        case compact
+        case medium
+        case expanded
+    }
+
     let state: SearchExperiencePreviewState
     let selectedDestination: SearchExperiencePreviewState.Suggestion?
     let onClearDestination: () -> Void
     @State private var isStartingPanelExpanded = false
     @State private var startingSearchText = "My location"
+    @State private var drawerHeight = DrawerHeight.medium
 
     var body: some View {
         VStack(spacing: 0) {
@@ -286,33 +306,38 @@ private struct SearchExperiencePanel: View {
                 .padding(.bottom, 10)
 
             if state.phase == .starting && selectedDestination == nil {
-                HStack(spacing: 10) {
-                    HStack(spacing: 9) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(.secondary)
-                        TextField("Search here", text: $startingSearchText)
-                            .textInputAutocapitalization(.words)
-                            .submitLabel(.search)
-                    }
-                    .padding(.horizontal, 12)
-                    .frame(height: 44)
-                    .background(.background.opacity(0.88), in: RoundedRectangle(cornerRadius: 13))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 13)
-                            .stroke(.secondary.opacity(0.2))
-                    }
+                    HStack(spacing: 10) {
+                        HStack(spacing: 9) {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundStyle(.secondary)
+                            TextField("Search here", text: $startingSearchText)
+                                .textInputAutocapitalization(.words)
+                                .submitLabel(.search)
+                        }
+                        .padding(.horizontal, 12)
+                        .frame(height: 44)
+                        .background(.background.opacity(0.88), in: RoundedRectangle(cornerRadius: 13))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 13)
+                                .stroke(.secondary.opacity(0.2))
+                        }
 
-                    Button("Search") {}
-                        .buttonStyle(.bordered)
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
+                        Button("Search") {}
+                            .buttonStyle(.bordered)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
             } else {
                 SearchExperiencePanelHeader(
                     title: selectedDestination.map { LocalizedStringKey($0.title) } ?? panelTitle,
                     showsEdit: state.showsJourneySummary,
                     showsSearch: false,
-                    showsClear: selectedDestination != nil,
+                    showsClear: selectedDestination != nil
+                        || state.phase == .navigationReady
+                        || state.phase == .chargerResults
+                        || state.phase == .searching
+                        || state.phase == .empty
+                        || state.phase == .failure,
                     onClear: onClearDestination
                 )
             }
@@ -347,8 +372,14 @@ private struct SearchExperiencePanel: View {
                         NavigationRouteContent(
                             origin: state.originText,
                             destination: state.destinationText,
-                            destinationDetail: state.destinationDetail
+                            destinationDetail: state.destinationDetail,
+                            results: state.results,
+                            isSearching: false
                         )
+                    case .chargerResults:
+                        ChargerResultsTabs(results: state.results)
+                    case .restaurantPreferences:
+                        SelectedRestaurantPreferences()
                     case .placeSearch:
                         PlaceSearchContent()
                     case .destinationEntry:
@@ -358,7 +389,13 @@ private struct SearchExperiencePanel: View {
                     case .namedArea:
                         StopIntentContent(state: state, showsNamedArea: true)
                     case .searching:
-                        SearchingContent(message: state.progressText ?? "Finding useful stops…")
+                        NavigationRouteContent(
+                            origin: state.originText,
+                            destination: state.destinationText,
+                            destinationDetail: state.destinationDetail,
+                            results: state.results,
+                            isSearching: true
+                        )
                     case .results:
                         SearchResultsContent(results: state.results, message: state.message)
                     case .empty:
@@ -378,7 +415,9 @@ private struct SearchExperiencePanel: View {
                     }
                     }
                 }
-                .padding(16)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 16)
             }
         }
         .frame(maxHeight: panelMaximumHeight)
@@ -388,12 +427,19 @@ private struct SearchExperiencePanel: View {
         .gesture(
             DragGesture(minimumDistance: 20)
                 .onEnded { value in
-                    guard state.phase == .starting, selectedDestination == nil else { return }
                     withAnimation(.snappy) {
-                        if value.translation.height < -25 {
-                            isStartingPanelExpanded = true
-                        } else if value.translation.height > 25 {
-                            isStartingPanelExpanded = false
+                        if state.phase == .starting, selectedDestination == nil {
+                            if value.translation.height < -25 {
+                                isStartingPanelExpanded = true
+                            } else if value.translation.height > 25 {
+                                isStartingPanelExpanded = false
+                            }
+                        } else if supportsDrawerDetents {
+                            if value.translation.height < -25 {
+                                drawerHeight = drawerHeight == .compact ? .medium : .expanded
+                            } else if value.translation.height > 25 {
+                                drawerHeight = drawerHeight == .expanded ? .medium : .compact
+                            }
                         }
                     }
                 }
@@ -408,6 +454,10 @@ private struct SearchExperiencePanel: View {
             "Destination"
         case .navigationReady:
             "Route"
+        case .chargerResults:
+            "Nearby Chargers"
+        case .restaurantPreferences:
+            "Restaurant Preferences"
         case .placeSearch:
             "Search"
         case .destinationEntry:
@@ -432,7 +482,11 @@ private struct SearchExperiencePanel: View {
         case .destinationSelected:
             620
         case .navigationReady:
-            650
+            interactiveDrawerHeight
+        case .chargerResults:
+            interactiveDrawerHeight
+        case .restaurantPreferences:
+            620
         case .placeSearch:
             720
         case .destinationEntry:
@@ -440,11 +494,28 @@ private struct SearchExperiencePanel: View {
         case .journeyReady, .namedArea:
             610
         case .searching:
-            390
+            interactiveDrawerHeight
         case .results:
-            570
+            interactiveDrawerHeight
         case .empty, .failure:
-            470
+            interactiveDrawerHeight
+        }
+    }
+
+    private var supportsDrawerDetents: Bool {
+        switch state.phase {
+        case .navigationReady, .chargerResults, .searching, .results, .empty, .failure:
+            true
+        default:
+            false
+        }
+    }
+
+    private var interactiveDrawerHeight: CGFloat {
+        switch drawerHeight {
+        case .compact: 126
+        case .medium: 410
+        case .expanded: 720
         }
     }
 }
@@ -615,7 +686,6 @@ private struct NavigationRouteContent: View {
         case driving
         case restaurants
         case charging
-        case walking
 
         var id: Self { self }
 
@@ -624,7 +694,6 @@ private struct NavigationRouteContent: View {
             case .driving: "car.fill"
             case .restaurants: "fork.knife"
             case .charging: "bolt.fill"
-            case .walking: "figure.walk"
             }
         }
 
@@ -633,7 +702,6 @@ private struct NavigationRouteContent: View {
             case .driving: "Driving"
             case .restaurants: "Restaurant preferences"
             case .charging: "Charging needs"
-            case .walking: "Walking preferences"
             }
         }
     }
@@ -646,11 +714,14 @@ private struct NavigationRouteContent: View {
     let origin: String
     let destination: String
     let destinationDetail: String?
+    let results: [SearchExperiencePreviewState.Result]
+    let isSearching: Bool
     @State private var selectedTab = RouteTab.driving
     @State private var rangeUnit = RangeUnit.miles
     @State private var rangeStart = 100.0
     @State private var rangeEnd = 150.0
     @State private var walkingMinutes = 10
+    @State private var isStopWindowExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -660,17 +731,18 @@ private struct NavigationRouteContent: View {
             case .driving:
                 drivingContent
             case .restaurants:
-                preferenceCard(
-                    title: "Restaurant preferences",
-                    rows: [("Cuisine", "All"), ("Chains", "All")]
-                )
+                VStack(spacing: 14) {
+                    preferenceCard(
+                        title: "Restaurant preferences",
+                        rows: [("Cuisine", "All"), ("Restaurants", "All")]
+                    )
+                    walkingContent
+                }
             case .charging:
                 preferenceCard(
                     title: "Charging needs",
                     rows: [("Connector", "All"), ("Network", "All"), ("Speed", "150+ kW")]
                 )
-            case .walking:
-                walkingContent
             }
         }
     }
@@ -715,32 +787,62 @@ private struct NavigationRouteContent: View {
                 )
             }
 
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Target Stop Window")
-                    .font(.headline)
-
-                Picker("Range unit", selection: $rangeUnit) {
-                    ForEach(RangeUnit.allCases, id: \.self) { unit in
-                        Text(unit.rawValue).tag(unit)
+            DisclosureGroup(isExpanded: $isStopWindowExpanded) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Picker("Range unit", selection: $rangeUnit) {
+                        ForEach(RangeUnit.allCases, id: \.self) { unit in
+                            Text(unit.rawValue).tag(unit)
+                        }
                     }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: rangeUnit) { _, unit in
-                    switch unit {
-                    case .miles:
-                        rangeStart = 100
-                        rangeEnd = 150
-                    case .hours:
-                        rangeStart = 1.5
-                        rangeEnd = 2.5
+                    .pickerStyle(.segmented)
+                    .onChange(of: rangeUnit) { _, unit in
+                        switch unit {
+                        case .miles:
+                            rangeStart = 100
+                            rangeEnd = 150
+                        case .hours:
+                            rangeStart = 1.5
+                            rangeEnd = 2.5
+                        }
                     }
-                }
 
-                rangeRow(title: "From", value: $rangeStart)
-                rangeRow(title: "To", value: $rangeEnd)
+                    rangeRow(title: "From", value: $rangeStart)
+                    rangeRow(title: "To", value: $rangeEnd)
+                }
+                .padding(.top, 12)
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Target Stop Window")
+                        .font(.headline)
+                    Text(stopWindowSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(14)
             .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
+
+            if !results.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Charging stops")
+                        .font(.headline)
+                    ForEach(results.prefix(3)) { result in
+                        ChargerResultPreviewRow(result: result)
+                    }
+                }
+            }
+
+            if isSearching {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Finding compatible charging stops…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 14))
+            }
         }
     }
 
@@ -791,6 +893,10 @@ private struct NavigationRouteContent: View {
 
     private var rangeIncrement: Double {
         rangeUnit == .miles ? 25 : 0.5
+    }
+
+    private var stopWindowSummary: String {
+        "\(formattedRangeValue(rangeStart))–\(formattedRangeValue(rangeEnd)) \(rangeUnit.rawValue.lowercased()) applied"
     }
 
     private func formattedRangeValue(_ value: Double) -> String {
@@ -873,7 +979,8 @@ private struct NearbyPreferencesContent: View {
                 title: "Restaurant preferences",
                 rows: [
                     ("Cuisine", "All", "fork.knife"),
-                    ("Chains", "All", "building.2")
+                    ("Restaurants", "All", "building.2"),
+                    ("Maximum walk", "10 minutes", "figure.walk")
                 ]
             )
 
@@ -993,8 +1100,243 @@ private struct SelectedDestinationContent: View {
                     .buttonStyle(.bordered)
             }
 
+            TargetStopWindowSummary()
             NearbyPreferencesContent()
         }
+    }
+}
+
+private struct TargetStopWindowSummary: View {
+    private enum Unit: String, CaseIterable {
+        case miles = "Miles"
+        case hours = "Hours"
+    }
+
+    @State private var isExpanded = false
+    @State private var unit = Unit.miles
+    @State private var start = 100.0
+    @State private var end = 150.0
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(spacing: 14) {
+                Picker("Range unit", selection: $unit) {
+                    ForEach(Unit.allCases, id: \.self) { unit in
+                        Text(unit.rawValue).tag(unit)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: unit) { _, newUnit in
+                    if newUnit == .miles {
+                        start = 100
+                        end = 150
+                    } else {
+                        start = 1.5
+                        end = 2.5
+                    }
+                }
+
+                valueRow("From", value: $start)
+                valueRow("To", value: $end)
+            }
+            .padding(.top, 12)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Target Stop Window")
+                    .font(.headline)
+                Text(summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func valueRow(_ title: LocalizedStringKey, value: Binding<Double>) -> some View {
+        HStack {
+            Text(title)
+                .font(.headline)
+                .frame(width: 48, alignment: .leading)
+            Button {
+                value.wrappedValue = max(0, value.wrappedValue - increment)
+            } label: {
+                Image(systemName: "minus")
+            }
+            .buttonStyle(.bordered)
+
+            Text(formatted(value.wrappedValue))
+                .monospacedDigit()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+
+            Button {
+                value.wrappedValue += increment
+            } label: {
+                Image(systemName: "plus")
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private var increment: Double { unit == .miles ? 25 : 0.5 }
+
+    private var summary: String {
+        "\(formatted(start))–\(formatted(end)) \(unit.rawValue.lowercased()) applied"
+    }
+
+    private func formatted(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(unit == .miles ? 0 : 1)))
+    }
+}
+
+private struct ChargerResultPreviewRow: View {
+    let result: SearchExperiencePreviewState.Result
+
+    var body: some View {
+        ChargingResultCard(result: result)
+    }
+}
+
+private struct ChargerResultsTabs: View {
+    private enum Tab: String, CaseIterable, Identifiable {
+        case results, restaurants, charging
+        var id: Self { self }
+        var image: String {
+            switch self {
+            case .results: "list.bullet.circle.fill"
+            case .restaurants: "fork.knife"
+            case .charging: "bolt.fill"
+            }
+        }
+    }
+
+    let results: [SearchExperiencePreviewState.Result]
+    @State private var selectedTab = Tab.results
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                ForEach(Tab.allCases) { tab in
+                    Button {
+                        withAnimation(.snappy) { selectedTab = tab }
+                    } label: {
+                        Image(systemName: tab.image)
+                            .font(.title3)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(selectedTab == tab ? .white : .primary)
+                    .background(selectedTab == tab ? Color.blue : Color.clear, in: Capsule())
+                    .accessibilityLabel(tab.rawValue.capitalized)
+                }
+            }
+            .padding(5)
+            .background(.secondary.opacity(0.12), in: Capsule())
+
+            switch selectedTab {
+            case .results:
+                ForEach(results) { result in
+                    ChargerResultPreviewRow(result: result)
+                }
+            case .restaurants:
+                simplePreferences(
+                    "Restaurant preferences",
+                    rows: ["Cuisine · All", "Restaurants · All", "Maximum walk · 10 minutes"]
+                )
+            case .charging:
+                simplePreferences("Charging needs", rows: ["Connector · All", "Network · All", "Speed · 150+ kW"])
+            }
+        }
+    }
+
+    private func simplePreferences(_ title: LocalizedStringKey, rows: [LocalizedStringKey]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.headline)
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack {
+                    Text(row)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .padding(14)
+        .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+private struct SelectedRestaurantPreferences: View {
+    @State private var walkingMinutes = 10
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            preferenceSection(
+                title: "Cuisines",
+                rows: [
+                    ("Italian", "Selected"),
+                    ("Mexican", "Selected")
+                ]
+            )
+
+            preferenceSection(
+                title: "Restaurants",
+                rows: [
+                    ("Chipotle", "Selected"),
+                    ("Panera Bread", "Selected"),
+                    ("+3 more", "")
+                ]
+            )
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Maximum walking time")
+                    .font(.headline)
+                Picker("Maximum walking time", selection: $walkingMinutes) {
+                    ForEach([5, 10, 15, 20], id: \.self) { minutes in
+                        Text("\(minutes) min").tag(minutes)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            .padding(14)
+            .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    private func preferenceSection(
+        title: LocalizedStringKey,
+        rows: [(LocalizedStringKey, LocalizedStringKey)]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.headline)
+                .padding(.bottom, 8)
+
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                HStack {
+                    Text(row.0)
+                    Spacer()
+                    Text(row.1)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    if index < 2 {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.blue)
+                    }
+                }
+                .padding(.vertical, 11)
+
+                if index < rows.count - 1 {
+                    Divider()
+                }
+            }
+        }
+        .padding(14)
+        .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -1330,80 +1672,13 @@ private struct SearchResultsContent: View {
             }
 
             ForEach(results) { result in
-                SearchResultCard(result: result)
+                ChargingResultCard(result: result)
             }
 
             Text("Driving estimates can change. Charger data is not live availability.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-    }
-}
-
-private struct SearchResultCard: View {
-    let result: SearchExperiencePreviewState.Result
-
-    var body: some View {
-        Button {} label: {
-            VStack(alignment: .leading, spacing: 11) {
-                HStack(alignment: .top) {
-                    Image(systemName: result.isSaved ? "bookmark.fill" : "bolt.fill")
-                        .foregroundStyle(result.isSaved ? .purple : .green)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(result.name)
-                            .font(.headline)
-                        Text(result.address)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(.tertiary)
-                }
-
-                ViewThatFits {
-                    HStack(spacing: 8) {
-                        ResultMetric(systemImage: "clock", text: result.arrival)
-                        ResultMetric(systemImage: "arrow.triangle.branch", text: result.detour)
-                    }
-                    VStack(alignment: .leading, spacing: 7) {
-                        ResultMetric(systemImage: "clock", text: result.arrival)
-                        ResultMetric(systemImage: "arrow.triangle.branch", text: result.detour)
-                    }
-                }
-
-                HStack(spacing: 6) {
-                    Image(systemName: "fork.knife")
-                    Text(result.foodSummary)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-                Text(result.connectorSummary)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(14)
-            .background(.background.opacity(0.86), in: RoundedRectangle(cornerRadius: 16))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct ResultMetric: View {
-    let systemImage: String
-    let text: String
-
-    var body: some View {
-        Label(text, systemImage: systemImage)
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .background(.blue.opacity(0.1), in: Capsule())
     }
 }
 
