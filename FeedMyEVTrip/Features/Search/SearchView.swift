@@ -37,6 +37,7 @@ struct SearchView: View {
     @State private var searchMode = SearchMode.nearby
     @State private var showsNearbyResults = false
     @State private var panelSize = SearchDrawerSize.compact
+    @State private var resultsPanelSize = SearchDrawerSize.medium
     @State private var hasSearched = false
     @State private var waitingForNearbyLocation = false
     @State private var searchesAfterLocationRequest = false
@@ -77,7 +78,6 @@ struct SearchView: View {
     @State private var showsSearchHere = false
     @State private var suppressesNextCameraPrompt = true
     @State private var isShowingStopArea = false
-    @State private var overviewRegion: MKCoordinateRegion?
     @State private var selectedFoodDetails: SelectedFood?
     @State private var chargerNoteDraft = ""
     @State private var isSyncingChargerNote = false
@@ -179,7 +179,7 @@ struct SearchView: View {
                 }
             }
             if isShowingStopArea {
-                ForEach(Array(nearbyFood.prefix(3).enumerated()), id: \.offset) { _, food in
+                ForEach(nearbyFood, id: \.self) { food in
                     Annotation(food.name ?? "Food", coordinate: food.location.coordinate) {
                         Button { selectFoodDetails(food) } label: {
                             Image(systemName: "fork.knife.circle.fill")
@@ -232,15 +232,15 @@ struct SearchView: View {
                 if showsDrawerHeader {
                     HStack {
                         if selectedCharger != nil {
-                            Button(action: returnToResults) { Label("Results", systemImage: "chevron.left") }
-                            Spacer()
-                            Text("Charging stop").font(.headline)
-                            Button {
-                                withAnimation { panelSize = panelSize == .expanded ? .medium : .expanded }
-                            } label: {
-                                Image(systemName: panelSize == .expanded ? "chevron.down" : "chevron.up")
+                            if isShowingStopArea {
+                                Spacer()
+                                drawerCloseButton("Close charging stop", action: returnToResults)
+                            } else {
+                                Button(action: returnToResults) {
+                                    Label("Results", systemImage: "chevron.left")
+                                }
+                                Spacer()
                             }
-                            .accessibilityLabel(panelSize == .expanded ? "Collapse panel" : "Expand panel")
                         } else if isEditingSearch && searchMode == .route {
                             Text("Route").font(.title3.bold())
                             Spacer()
@@ -274,22 +274,31 @@ struct SearchView: View {
                 )
             } else if isEditingSearch && searchMode == .route {
                 FindMyStopView(destination: $routeDestination, onResults: showRouteResults)
-            } else if selectedCharger != nil {
-                ScrollView {
-                    if let stop = routeResults?.stops.first(where: { $0.id == selectedCharger?.id }) {
-                        Text(stop.summary).font(.caption).padding(.horizontal)
+            } else if selectedCharger != nil || showsNearbyResults
+                        || (selectedDestinationPlace == nil && routeResults != nil) {
+                ZStack {
+                    // Keep the results scroll view alive while showing charger details.
+                    resultsList(includesStopWindow: !showsNearbyResults)
+                        .opacity(selectedCharger == nil ? 1 : 0)
+                        .allowsHitTesting(selectedCharger == nil)
+                        .accessibilityHidden(selectedCharger != nil)
+
+                    if selectedCharger != nil {
+                        ScrollView {
+                            if let stop = routeResults?.stops.first(where: { $0.id == selectedCharger?.id }) {
+                                Text(stop.summary).font(.caption).padding(.horizontal)
+                            }
+                            StopResultPanel(
+                                state: panelState,
+                                note: $chargerNoteDraft,
+                                onSave: saveSelectedCharger,
+                                onDirections: openSelectedChargerDirections,
+                                onViewDetails: showStopDetails,
+                                onSelectFood: selectFoodDetails
+                            )
+                        }
                     }
-                    StopResultPanel(
-                        state: panelState,
-                        note: $chargerNoteDraft,
-                        onSave: saveSelectedCharger,
-                        onDirections: openSelectedChargerDirections,
-                        onToggleMapDetail: toggleMapDetail,
-                        onSelectFood: selectFoodDetails
-                    )
                 }
-            } else if showsNearbyResults {
-                resultsList(includesStopWindow: false)
             } else if let selectedDestinationPlace {
                 SelectedDestinationPanel(
                     subtitle: selectedDestinationSubtitle,
@@ -299,8 +308,6 @@ struct SearchView: View {
                     onRoute: startRouteToSelectedDestination,
                     onNearbyChargers: searchNearbySelectedDestination
                 )
-            } else if routeResults != nil {
-                resultsList(includesStopWindow: true)
             } else {
                 startingDrawer
             }
@@ -590,10 +597,13 @@ struct SearchView: View {
         nearbyFood = []
         isLoadingFood = false
         isShowingStopArea = false
-        overviewRegion = nil
         suppressesNextCameraPrompt = true
-        if let resultsRegion { cameraPosition = .region(resultsRegion) }
-        panelSize = .medium
+        if let resultsRegion {
+            withAnimation(.easeInOut(duration: 0.45)) {
+                cameraPosition = .region(resultsRegion)
+            }
+        }
+        panelSize = resultsPanelSize
     }
 
     private func showRouteResults(_ results: RouteStopResults) {
@@ -609,7 +619,6 @@ struct SearchView: View {
         isSearching = false
         isLoadingFood = false
         isShowingStopArea = false
-        overviewRegion = nil
         showsSearchHere = false
         suppressesNextCameraPrompt = true
         message = results.stops.isEmpty
@@ -682,7 +691,6 @@ struct SearchView: View {
         nearbyFood = []
         isLoadingFood = false
         isShowingStopArea = false
-        overviewRegion = nil
         showsSearchHere = false
 
         areaSearchTask = Task {
@@ -756,7 +764,6 @@ struct SearchView: View {
         chargers = []
         nearbyFood = []
         isShowingStopArea = false
-        overviewRegion = nil
         isSearching = true
 
         withAnimation(.easeInOut(duration: 0.45)) {
@@ -798,7 +805,10 @@ struct SearchView: View {
 
     private func select(_ charger: ChargerResult) {
         let selectedID = charger.id
-        if selectedCharger == nil { resultsRegion = visibleRegion }
+        if selectedCharger == nil {
+            resultsRegion = visibleRegion
+            resultsPanelSize = panelSize
+        }
         isEditingSearch = false
         panelSize = .medium
         selectedCharger = charger
@@ -806,7 +816,6 @@ struct SearchView: View {
         nearbyFood = []
         isLoadingFood = true
         isShowingStopArea = false
-        overviewRegion = nil
 
         areaSearchTask?.cancel()
         isSearching = false
@@ -832,6 +841,7 @@ struct SearchView: View {
 
                 guard selectedCharger?.id == selectedID else { return }
                 nearbyFood = localResults
+                if isShowingStopArea { showStopDetails() }
             } catch is CancellationError {
                 return
             } catch {
@@ -874,23 +884,10 @@ struct SearchView: View {
         )
     }
 
-    private func toggleMapDetail() {
-        if isShowingStopArea {
-            guard let overviewRegion else { return }
-            suppressesNextCameraPrompt = true
-            withAnimation(.easeInOut(duration: 0.45)) {
-                cameraPosition = .region(overviewRegion)
-            }
-            isShowingStopArea = false
-            self.overviewRegion = nil
-            return
-        }
-
-        guard let selectedCharger, !nearbyFood.isEmpty else { return }
-        overviewRegion = visibleRegion
+    private func showStopDetails() {
+        guard let selectedCharger else { return }
 
         let furthestDisplayedDistance = nearbyFood
-            .prefix(3)
             .map { selectedCharger.mapItem.location.distance(from: $0.location) }
             .max() ?? 200
         let visibleDiameter = max(furthestDisplayedDistance * 2, 400)
