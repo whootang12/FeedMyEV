@@ -335,36 +335,20 @@ private extension Array {
 }
 
 struct SelectedDestinationPanel: View {
-    let name: String
     let subtitle: String?
     let distance: String
     let driveTime: String
     let maximumWalkingMinutes: Int
-    let onClear: () -> Void
     let onRoute: () -> Void
     let onNearbyChargers: () -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                ZStack {
-                    VStack(spacing: 3) {
-                        Text(name)
-                            .font(.title3.bold())
-                        if let subtitle {
-                            Text(subtitle)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    HStack {
-                        Spacer()
-                        Button("Clear destination", systemImage: "xmark", action: onClear)
-                            .labelStyle(.iconOnly)
-                            .buttonStyle(.plain)
-                    }
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Text(distance)

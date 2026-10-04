@@ -14,7 +14,7 @@ Each feature has its own file. Folders group related features. These notes are t
 
 ### Search
 
-- [Search experience](search/search-experience.md) — planned
+- [Search experience](search/search-experience.md) — partial
 - [Nearby search](search/nearby-search.md)
 - [Route search](search/route-search.md)
 - [Place lookup and cache](search/place-lookup.md)

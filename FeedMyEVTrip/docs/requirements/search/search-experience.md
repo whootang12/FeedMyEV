@@ -1,6 +1,6 @@
 # Search experience
 
-Status: Planned
+Status: Partial
 
 Related requirements: [Route search](route-search.md), [Nearby search](nearby-search.md), [Place lookup and cache](place-lookup.md), [Type-ahead search](type-ahead.md), [Food-aware recommendations](../food/food-aware-recommendations.md), and [Saved stops](../saved-stops/saved-stops.md)
 
@@ -73,6 +73,22 @@ Planning and on-road decisions use the same journey and search model. When a tri
 
 The page distinguishes unavailable data from negative data. It must not imply that charger availability, reliability, or another unsupported attribute has been checked when the app does not have that information.
 
+### R16. Nearby results
+
+Search here and Nearby Chargers open the nearby chargers list. That list is not the route results list and does not show the route stop window. With no search and no selected place, panning the map shows Search here. The button does not wait for the location control.
+
+### R17. Drawer close
+
+A drawer that can be closed shows one X as its trailing control. That header does not also show the expand and collapse caret. The drawer does not show “Edit journey,” “Back to results,” or the old “Search nearby” form.
+
+### R18. Close directions
+
+After a place is selected, opening directions and then closing them returns to that place. Closing does not clear the searched place.
+
+### R19. One drawer
+
+The search field and the content under it are one drawer. Resizing or scrolling the drawer moves that field with the content. The content does not scroll in its own area beneath a fixed search field.
+
 ## Test cases
 
 | ID | Covers | Type | Given | When | Then |
@@ -91,5 +107,14 @@ The page distinguishes unavailable data from negative data. It must not imply th
 | TC12 | R12 | Integration | Results are visible | The person changes the desired stop time | The journey is retained and refreshed results use the new time |
 | TC13 | R13 | UI | A stop appears on the map and in the list | Either representation is selected | Both identify the same stop and expose its details |
 | TC14 | R14 | UI | The trip is underway | The search page is shown | The presentation is concise and does not claim active-driver suitability |
+| TC15 | R16 | Integration | A place is selected and the map has moved | Search here is tapped | The nearby chargers list opens, without the route stop window |
+| TC20 | R16 | UI | No search has been made and no place is selected | The map is panned | Search here appears without using the location control |
+| TC16 | R16 | Integration | A place is selected | Nearby Chargers is tapped | The nearby chargers list opens for that place, without the route results page |
+| TC17 | R17 | UI | Directions are open on the route drawer | The drawer header is shown | The header has a trailing X and does not have an expand or collapse caret |
+| TC21 | R17 | UI | Nearby chargers are open | The drawer header is shown | The header has a trailing X and does not have an expand or collapse caret |
+| TC22 | R17 | UI | A place is selected | The drawer header is shown | The header has a trailing X and does not have an expand or collapse caret |
+| TC23 | R17 | UI | Any search drawer is open | The drawer is shown | It does not show “Edit journey,” “Back to results,” or the old “Search nearby” form |
+| TC18 | R18 | Integration | A place was searched and directions were opened | X is tapped | The selected place is shown again and the search is not cleared |
+| TC19 | R19 | UI | The search field and the preferences under it are visible | The drawer is resized or its content is scrolled | The search field and the content move together |
 
-Do not add these as passing tests until the corresponding behavior exists.
+TC15–TC23 describe the current drawer. Do not add any of these cases as passing tests until the corresponding behavior exists and a unit-test target is in place.

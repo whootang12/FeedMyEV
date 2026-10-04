@@ -84,10 +84,6 @@ struct SearchView: View {
     @State private var areaSearchTask: Task<Void, Never>?
     @State private var foodSearchTask: Task<Void, Never>?
 
-    private var isStartingScreen: Bool {
-        !hasSearched && selectedCharger == nil
-    }
-
     init() {
         _cameraPosition = State(initialValue: .region(startingRegion))
     }
@@ -200,7 +196,9 @@ struct SearchView: View {
         .onMapCameraChange(frequency: .onEnd) { context in
             visibleRegion = context.region
             if suppressesNextCameraPrompt { suppressesNextCameraPrompt = false }
-            else if hasSearched { showsSearchHere = true }
+            else if routeResults == nil && searchMode == .nearby && selectedCharger == nil {
+                showsSearchHere = true
+            }
         }
         .overlay(alignment: .bottomTrailing) {
             Button {
@@ -231,44 +229,34 @@ struct SearchView: View {
             VStack(spacing: 10) {
                 SearchDrawerHandle()
 
-                if !isStartingScreen {
+                if showsDrawerHeader {
                     HStack {
                         if selectedCharger != nil {
                             Button(action: returnToResults) { Label("Results", systemImage: "chevron.left") }
                             Spacer()
                             Text("Charging stop").font(.headline)
-                        } else if isEditingSearch && searchMode == .route {
-                            Text("Route").font(.title3.bold())
-                            Spacer()
-                            Button("Close route", systemImage: "xmark", action: closeRoutePlanning)
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(.plain)
-                        } else if showsNearbyResults {
-                            Text("Nearby Chargers").font(.title3.bold())
-                            Spacer()
-                            Button("Close nearby chargers", systemImage: "xmark", action: closeNearbyResults)
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(.plain)
-                        } else if !isEditingSearch {
-                            Spacer()
-                            Button("Close results", systemImage: "xmark", action: closeResults)
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(.plain)
-                        } else {
-                            Text(isEditingSearch ? "Search" : "Charging stops")
-                                .font(.title3.bold())
-                            Spacer()
-                            if isEditingSearch && hasSearched {
-                                Button("Back to results") { isEditingSearch = false; panelSize = .medium }
-                            }
-                        }
-                        if searchMode != .route {
                             Button {
                                 withAnimation { panelSize = panelSize == .expanded ? .medium : .expanded }
                             } label: {
                                 Image(systemName: panelSize == .expanded ? "chevron.down" : "chevron.up")
                             }
                             .accessibilityLabel(panelSize == .expanded ? "Collapse panel" : "Expand panel")
+                        } else if isEditingSearch && searchMode == .route {
+                            Text("Route").font(.title3.bold())
+                            Spacer()
+                            drawerCloseButton("Close route", action: closeRoutePlanning)
+                        } else if showsNearbyResults {
+                            Text("Nearby Chargers").font(.title3.bold())
+                            Spacer()
+                            drawerCloseButton("Close nearby chargers", action: closeNearbyResults)
+                        } else if !isEditingSearch, routeResults != nil {
+                            Text("Route").font(.title3.bold())
+                            Spacer()
+                            drawerCloseButton("Close results", action: closeResults)
+                        } else if selectedDestinationPlace != nil {
+                            Text(destination).font(.title3.bold()).lineLimit(1)
+                            Spacer()
+                            drawerCloseButton("Clear destination", action: clearSelectedDestination)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -304,57 +292,45 @@ struct SearchView: View {
                 resultsList(includesStopWindow: false)
             } else if let selectedDestinationPlace {
                 SelectedDestinationPanel(
-                    name: destination,
                     subtitle: selectedDestinationSubtitle,
                     distance: distanceDescription(to: selectedDestinationPlace),
                     driveTime: "3h 14min",
                     maximumWalkingMinutes: maximumWalkingMinutes,
-                    onClear: clearSelectedDestination,
                     onRoute: startRouteToSelectedDestination,
                     onNearbyChargers: searchNearbySelectedDestination
                 )
-            } else if isStartingScreen {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        SearchLocationBar(text: $destination, onSearch: search, onFocus: beginPlaceSearch)
-                        SearchPreferenceSections(maximumWalkingMinutes: maximumWalkingMinutes)
-                            .padding(.horizontal, 16)
-                    }
-                }
-                .scrollBounceBehavior(.basedOnSize)
-            } else if isEditingSearch {
-                Form {
-                    Section("Search nearby") {
-                        TextField("Town or address", text: $destination)
-                            .onSubmit(search)
-                        Button("Search", action: search)
-                            .disabled(destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        Button {
-                            searchesAfterLocationRequest = true
-                            waitingForNearbyLocation = true
-                            locationService.requestCurrentLocation()
-                        } label: { Label("Use my location", systemImage: "location.fill") }
-                    }
-                }
-            } else {
+            } else if routeResults != nil {
                 resultsList(includesStopWindow: true)
+            } else {
+                startingDrawer
             }
         }
     }
 
-    private var nearbyPreferences: some View {
-        Form {
-            Section("Restaurant preferences") {
-                preferenceRow(title: "Cuisine", value: "All", systemImage: "fork.knife")
-                preferenceRow(title: "Chains", value: "All", systemImage: "building.2")
-            }
-
-            Section("Charging needs") {
-                preferenceRow(title: "Connector", value: "All", systemImage: "powerplug")
-                preferenceRow(title: "Network", value: "All", systemImage: "network")
-                preferenceRow(title: "Speed", value: "150+ kW", systemImage: "bolt.fill")
+    private var startingDrawer: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                SearchLocationBar(text: $destination, onSearch: search, onFocus: beginPlaceSearch)
+                SearchPreferenceSections(maximumWalkingMinutes: maximumWalkingMinutes)
+                    .padding(.horizontal, 16)
             }
         }
+        .scrollBounceBehavior(.basedOnSize)
+    }
+
+    private var showsDrawerHeader: Bool {
+        selectedCharger != nil
+            || (isEditingSearch && searchMode == .route)
+            || showsNearbyResults
+            || selectedDestinationPlace != nil
+            || (!isEditingSearch && routeResults != nil)
+    }
+
+    private func drawerCloseButton(_ title: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+        Button(title, systemImage: "xmark", action: action)
+            .labelStyle(.iconOnly)
+            .buttonStyle(.plain)
+            .layoutPriority(1)
     }
 
     private func preferenceRow(
@@ -464,15 +440,6 @@ struct SearchView: View {
         }
         .padding(14)
         .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func editSearch() {
-        cancelActiveSearches()
-        isSearching = false
-        hasSearched = false
-        selectedCharger = nil
-        routeResults = nil
-        beginPlaceSearch()
     }
 
     private func beginPlaceSearch() {
