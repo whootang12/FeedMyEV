@@ -5,6 +5,7 @@ struct RootView: View {
     var body: some View {
         TabView {
             SearchView()
+                .toolbarBackgroundVisibility(.visible, for: .tabBar)
                 .tabItem {
                     Label("Search", systemImage: "map")
                 }

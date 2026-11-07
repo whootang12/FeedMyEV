@@ -31,8 +31,17 @@ Preferences for AI assistants working in this repository. Read this before makin
 
 ## Log
 
+- 2026-11-07: The target stop window defaults to hours and steps by 0.5 hours. Miles remain available. Preference rows in the search drawer edit their setting in place; rows for filters that don't exist yet are plain text.
+
+- 2026-10-03: Style View details like the Apple Maps Website action: a rounded, lightly tinted button with a blue icon above its label.
+
+- 2026-10-03: Closing charger details returns to the previous position in the results list and restores the results drawer height, as well as the map region.
+
+- 2026-10-03: Charger selection uses a prominent View details button to zoom to the stop and show every matching nearby food option. Keep the top-left Results back button on initial charger selection. After View details, replace it with a top-right X that returns to the results list and restores the previous map region. Remove the Charging stop expand control and Back to area button.
+
 - 2026-09-26: Started this file. Moved `AFDC_DATA.md` and `MVP_STATUS.md` into `docs/` so project notes live with the committed repository and stay out of the app bundle.
 - 2026-09-26: Keep project notes in `FeedMyEVTrip/docs/` so they are visible in Xcode, and keep that folder out of the app target.
 - 2026-09-26: Walking directions from a restaurant start at the selected charger and end at the restaurant.
 - 2026-09-26: Charger connector preferences are CCS, NACS, and CHAdeMO. A stop stays in results when it has at least one selected connector.
 - 2026-09-26: Detailed feature requirements and test cases live in `FeedMyEVTrip/docs/requirements/`, one feature per file.
+- 2026-09-27: Keep the evolving product briefing in `docs/PRODUCT_BRIEF.md`; keep concrete search-page behavior in `docs/requirements/search/search-experience.md` and related feature requirement files.

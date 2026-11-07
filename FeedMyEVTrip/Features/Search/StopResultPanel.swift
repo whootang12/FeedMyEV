@@ -31,7 +31,7 @@ struct StopResultPanel: View {
     @Binding var note: String
     var onSave: () -> Void = {}
     var onDirections: () -> Void = {}
-    var onToggleMapDetail: () -> Void = {}
+    var onViewDetails: () -> Void = {}
     var onSelectFood: (FoodSummary) -> Void = { _ in }
 
     init(
@@ -39,14 +39,14 @@ struct StopResultPanel: View {
         note: Binding<String> = .constant(""),
         onSave: @escaping () -> Void = {},
         onDirections: @escaping () -> Void = {},
-        onToggleMapDetail: @escaping () -> Void = {},
+        onViewDetails: @escaping () -> Void = {},
         onSelectFood: @escaping (FoodSummary) -> Void = { _ in }
     ) {
         self.state = state
         _note = note
         self.onSave = onSave
         self.onDirections = onDirections
-        self.onToggleMapDetail = onToggleMapDetail
+        self.onViewDetails = onViewDetails
         self.onSelectFood = onSelectFood
     }
 
@@ -116,7 +116,7 @@ struct StopResultPanel: View {
             Text("\(stop.foodOptions.count) food options found within your walking range")
                 .font(.subheadline)
 
-            ForEach(stop.foodOptions.prefix(3)) { food in
+            ForEach(stop.foodOptions.prefix(isShowingStopArea ? stop.foodOptions.count : 3)) { food in
                 Button {
                     onSelectFood(food)
                 } label: {
@@ -144,15 +144,21 @@ struct StopResultPanel: View {
             }
         }
 
-        if !isLoadingFood && !stop.foodOptions.isEmpty {
-            Button(action: onToggleMapDetail) {
-                Label(
-                    isShowingStopArea ? "Back to area" : "Show charger and food on map",
-                    systemImage: isShowingStopArea ? "arrow.down.right.and.arrow.up.left" : "map"
-                )
+        if !isShowingStopArea {
+            Button(action: onViewDetails) {
+                VStack(spacing: 6) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.title2)
+                    Text("View details")
+                        .font(.subheadline.weight(.semibold))
+                }
                 .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
             }
             .buttonStyle(.bordered)
+            .buttonBorderShape(.roundedRectangle(radius: 16))
+            .controlSize(.large)
+            .tint(.blue)
         }
 
         TextField("Notes", text: $note, axis: .vertical)

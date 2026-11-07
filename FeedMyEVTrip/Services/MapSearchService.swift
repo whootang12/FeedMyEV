@@ -134,6 +134,16 @@ final class MapSearchService: ObservableObject {
         return places.first?.searchPlace
     }
 
+    /// Resolves the place behind a chosen suggestion. Falls back to a text
+    /// search only for suggestions that have no MapKit completion.
+    func resolve(_ suggestion: LocationSearchSuggestion) async throws -> SearchPlace? {
+        guard let completion = suggestion.completion else {
+            return try await resolveDestination(suggestion.query)
+        }
+        let response = try await execute(request: MKLocalSearch.Request(completion: completion))
+        return response.mapItems.first.map { SearchPlace(mapItem: $0, identifier: $0.identifier?.rawValue) }
+    }
+
     func searchFood(
         around coordinate: CLLocationCoordinate2D,
         radius: CLLocationDistance,
