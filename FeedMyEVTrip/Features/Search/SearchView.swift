@@ -42,6 +42,9 @@ struct SearchView: View {
     @State private var waitingForNearbyLocation = false
     @State private var searchesAfterLocationRequest = false
     @State private var resultsRegion: MKCoordinateRegion?
+    @State private var selectedDestinationDriveTime: String?
+    @State private var driveTimeTask: Task<Void, Never>?
+    private let preferenceValues = SearchPreferenceValues()
 
     private enum SearchMode: String, CaseIterable {
         case route = "Along a route", nearby = "Near a place"
@@ -273,9 +276,16 @@ struct SearchView: View {
                     onSelect: selectLocationSuggestion
                 )
             } else if isEditingSearch && searchMode == .route {
-                FindMyStopView(destination: $routeDestination, onResults: showRouteResults)
+                FindMyStopView(
+                    locationService: locationService,
+                    destination: $routeDestination,
+                    resolvedDestination: selectedDestinationPlace.map {
+                        (name: destination.trimmingCharacters(in: .whitespacesAndNewlines), place: $0)
+                    },
+                    onResults: showRouteResults
+                )
             } else if selectedCharger != nil || showsNearbyResults
-                        || (selectedDestinationPlace == nil && routeResults != nil) {
+                        || (!isEditingSearch && routeResults != nil) {
                 ZStack {
                     // Keep the results scroll view alive while showing charger details.
                     resultsList(includesStopWindow: !showsNearbyResults)
@@ -303,8 +313,7 @@ struct SearchView: View {
                 SelectedDestinationPanel(
                     subtitle: selectedDestinationSubtitle,
                     distance: distanceDescription(to: selectedDestinationPlace),
-                    driveTime: "3h 14min",
-                    maximumWalkingMinutes: maximumWalkingMinutes,
+                    driveTime: selectedDestinationDriveTime ?? "Route",
                     onRoute: startRouteToSelectedDestination,
                     onNearbyChargers: searchNearbySelectedDestination
                 )
@@ -318,7 +327,7 @@ struct SearchView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 SearchLocationBar(text: $destination, onSearch: search, onFocus: beginPlaceSearch)
-                SearchPreferenceSections(maximumWalkingMinutes: maximumWalkingMinutes)
+                SearchPreferenceSections()
                     .padding(.horizontal, 16)
             }
         }
@@ -340,27 +349,6 @@ struct SearchView: View {
             .layoutPriority(1)
     }
 
-    private func preferenceRow(
-        title: LocalizedStringKey,
-        value: LocalizedStringKey,
-        systemImage: String
-    ) -> some View {
-        Button {} label: {
-            HStack(spacing: 12) {
-                Label(title, systemImage: systemImage)
-                    .foregroundStyle(.primary)
-                Spacer()
-                Text(value)
-                    .foregroundStyle(.secondary)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
     private func resultsList(includesStopWindow: Bool) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -370,14 +358,14 @@ struct SearchView: View {
                 case .results:
                     if includesStopWindow {
                         DisclosureGroup(isExpanded: $isResultsStopWindowExpanded) {
-                            Text("Results prioritize chargers within the currently selected 100–150 mile window.")
+                            Text("Results prioritize chargers within the selected stop window and detour limit.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .padding(.top, 8)
                         } label: {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("Target Stop Window").font(.headline)
-                                Text(routeResults?.windowDescription ?? "100–150 miles applied")
+                                Text(routeResults?.windowDescription ?? preferenceValues.stopWindow)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -405,9 +393,9 @@ struct SearchView: View {
                         Text(notice).font(.caption).foregroundStyle(.secondary)
                     }
                 case .restaurants:
-                    SearchPreferenceSections(maximumWalkingMinutes: maximumWalkingMinutes)
+                    SearchPreferenceSections()
                 case .charging:
-                    chargingPreferencesCard
+                    ChargingPreferencesCard()
                 }
             }
             .padding()
@@ -436,22 +424,10 @@ struct SearchView: View {
         .background(.secondary.opacity(0.12), in: Capsule())
     }
 
-    private var chargingPreferencesCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Charging needs").font(.headline).padding(.bottom, 8)
-            preferenceRow(title: "Connector", value: "All", systemImage: "powerplug")
-            Divider()
-            preferenceRow(title: "Network", value: "All", systemImage: "network")
-            Divider()
-            preferenceRow(title: "Speed", value: "150+ kW", systemImage: "bolt.fill")
-        }
-        .padding(14)
-        .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
-    }
-
     private func beginPlaceSearch() {
         destinationSelectionTask?.cancel()
         selectedDestinationPlace = nil
+        clearDriveTime()
         selectedDestinationSubtitle = nil
         destination = ""
         showsNearbyResults = false
@@ -472,7 +448,7 @@ struct SearchView: View {
         destinationSelectionTask?.cancel()
         destinationSelectionTask = Task {
             do {
-                guard let place = try await searchService.resolveDestination(suggestion.query) else {
+                guard let place = try await searchService.resolve(suggestion) else {
                     message = "We couldn’t find that destination."
                     return
                 }
@@ -480,6 +456,7 @@ struct SearchView: View {
                 destination = suggestion.title
                 selectedDestinationSubtitle = suggestion.subtitle.isEmpty ? nil : suggestion.subtitle
                 selectedDestinationPlace = place
+                loadDriveTime(to: place)
                 isPlaceSearchPresented = false
                 locationCompleter.clear()
                 panelSize = .expanded
@@ -497,8 +474,32 @@ struct SearchView: View {
         }
     }
 
+    /// Driving time from the current location to the selected destination,
+    /// shown on the route button. Stays unset if Apple Maps can't estimate it.
+    private func loadDriveTime(to place: SearchPlace) {
+        clearDriveTime()
+        driveTimeTask = Task {
+            let request = MKDirections.Request()
+            request.source = locationService.location.map { MKMapItem(location: $0, address: nil) }
+                ?? MKMapItem.forCurrentLocation()
+            request.destination = place.mapItem
+            request.transportType = .automobile
+            guard let estimate = try? await MKDirections(request: request).calculateETA(),
+                  !Task.isCancelled else { return }
+            selectedDestinationDriveTime = Duration.seconds(estimate.expectedTravelTime)
+                .formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
+        }
+    }
+
+    private func clearDriveTime() {
+        driveTimeTask?.cancel()
+        driveTimeTask = nil
+        selectedDestinationDriveTime = nil
+    }
+
     private func clearSelectedDestination() {
         selectedDestinationPlace = nil
+        clearDriveTime()
         selectedDestinationSubtitle = nil
         destination = ""
         showsNearbyResults = false

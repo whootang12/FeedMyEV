@@ -98,69 +98,209 @@ struct SearchLocationBar: View {
     }
 }
 
-struct SearchPreferenceSections: View {
-    let maximumWalkingMinutes: Int
+/// Storage keys and defaults for the route stop window. The window defaults to
+/// driving time (shown in hours, adjusted in half-hour steps).
+enum RouteWindowSettings {
+    static let unitKey = "route.windowUnit"
+    static let lowerKey = "route.windowLower"
+    static let upperKey = "route.windowUpper"
+    static let defaultUnit = StopWindowUnit.minutes
+    static let defaultLower = 90.0
+    static let defaultUpper = 150.0
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            preferenceCard(
-                "Restaurant preferences",
-                rows: [
-                    ("Cuisine", "All", "fork.knife"),
-                    ("Restaurants", "All", "building.2"),
-                    ("Maximum walk", "\(maximumWalkingMinutes) minutes", "figure.walk")
-                ]
-            )
-            preferenceCard(
-                "Charging needs",
-                rows: [
-                    ("Connector", "All", "powerplug"),
-                    ("Network", "All", "network"),
-                    ("Speed", "150+ kW", "bolt.fill")
-                ]
-            )
-        }
+    private static let legacyCheckKey = "route.windowUnitDefaultChecked"
+
+    /// Earlier versions defaulted to miles and stored only the bounds. On the
+    /// first launch after the default changed to hours, record miles for those
+    /// windows so they aren't reinterpreted. Runs once: afterwards an unstored
+    /// unit means the hours default.
+    static func preserveLegacyMilesWindow(in defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: legacyCheckKey) else { return }
+        defaults.set(true, forKey: legacyCheckKey)
+        guard defaults.object(forKey: unitKey) == nil,
+              defaults.object(forKey: lowerKey) != nil || defaults.object(forKey: upperKey) != nil
+        else { return }
+        defaults.set(StopWindowUnit.miles.rawValue, forKey: unitKey)
+    }
+}
+
+/// Text for the saved search preferences, read from the same storage the
+/// Preferences tab and route form write. Cuisine, network, and charging speed
+/// are not filtered yet, so their rows say "Any" instead of implying a check.
+struct SearchPreferenceValues: DynamicProperty {
+    static let unfiltered = "Any"
+
+    @AppStorage(FoodPreferenceKeys.includesRestaurants) private var includesRestaurants = true
+    @AppStorage(FoodPreferenceKeys.includesCafes) private var includesCafes = true
+    @AppStorage(FoodPreferenceKeys.includesBakeries) private var includesBakeries = true
+    @AppStorage(ChargerConnector.ccs.storageKey) private var includesCCS = true
+    @AppStorage(ChargerConnector.nacs.storageKey) private var includesNACS = true
+    @AppStorage(ChargerConnector.chademo.storageKey) private var includesCHAdeMO = true
+    @AppStorage(RouteWindowSettings.unitKey) private var windowUnit = RouteWindowSettings.defaultUnit
+    @AppStorage(RouteWindowSettings.lowerKey) private var windowLower = RouteWindowSettings.defaultLower
+    @AppStorage(RouteWindowSettings.upperKey) private var windowUpper = RouteWindowSettings.defaultUpper
+
+    var foodTypes: String {
+        Self.summary([("Restaurants", includesRestaurants), ("Cafés", includesCafes), ("Bakeries", includesBakeries)])
     }
 
-    private func preferenceCard(
-        _ title: LocalizedStringKey,
-        rows: [(LocalizedStringKey, String, String)]
-    ) -> some View {
+    var connectors: String {
+        Self.summary([
+            (ChargerConnector.ccs.title, includesCCS),
+            (ChargerConnector.nacs.title, includesNACS),
+            (ChargerConnector.chademo.title, includesCHAdeMO)
+        ])
+    }
+
+    var stopWindow: String {
+        Self.stopWindowDescription(unit: windowUnit, lower: windowLower, upper: windowUpper)
+    }
+
+    static func stopWindowDescription(unit: StopWindowUnit, lower: Double, upper: Double) -> String {
+        if unit == .miles {
+            let format = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0))
+            return "\(lower.formatted(format))–\(upper.formatted(format)) miles applied"
+        }
+        let format = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...1))
+        return "\((lower / 60).formatted(format))–\((upper / 60).formatted(format)) hours applied"
+    }
+
+    private static func summary(_ options: [(String, Bool)]) -> String {
+        let selected = options.filter(\.1).map(\.0)
+        return selected.count == options.count ? "All" : selected.joined(separator: ", ")
+    }
+}
+
+struct SearchPreferenceSections: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            RestaurantPreferencesCard()
+            ChargingPreferencesCard()
+        }
+    }
+}
+
+/// Food preferences, editable in place. Uses the same storage as the Preferences tab.
+struct RestaurantPreferencesCard: View {
+    var includesWalking = true
+
+    @AppStorage(FoodPreferenceKeys.includesRestaurants) private var includesRestaurants = true
+    @AppStorage(FoodPreferenceKeys.includesCafes) private var includesCafes = true
+    @AppStorage(FoodPreferenceKeys.includesBakeries) private var includesBakeries = true
+    @AppStorage(FoodPreferenceKeys.maximumWalkingMinutes) private var maximumWalkingMinutes = 15
+    private let values = SearchPreferenceValues()
+
+    var body: some View {
+        PreferenceCard(title: "Restaurant preferences") {
+            PreferenceRowLabel(title: "Cuisine", value: SearchPreferenceValues.unfiltered, systemImage: "fork.knife")
+            PreferenceDivider()
+            Menu {
+                // At least one food type stays selected, as in Preferences.
+                Toggle("Restaurants", isOn: $includesRestaurants)
+                    .disabled(includesRestaurants && !includesCafes && !includesBakeries)
+                Toggle("Cafés", isOn: $includesCafes)
+                    .disabled(includesCafes && !includesRestaurants && !includesBakeries)
+                Toggle("Bakeries", isOn: $includesBakeries)
+                    .disabled(includesBakeries && !includesRestaurants && !includesCafes)
+            } label: {
+                PreferenceRowLabel(title: "Food types", value: values.foodTypes, systemImage: "building.2", isEditable: true)
+            }
+            .buttonStyle(.plain)
+            if includesWalking {
+                PreferenceDivider()
+                Menu {
+                    Picker("Maximum walk", selection: $maximumWalkingMinutes) {
+                        ForEach([5, 10, 15, 20], id: \.self) { Text("\($0) minutes").tag($0) }
+                    }
+                } label: {
+                    PreferenceRowLabel(
+                        title: "Maximum walk",
+                        value: "\(maximumWalkingMinutes) minutes",
+                        systemImage: "figure.walk",
+                        isEditable: true
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+/// Charging preferences, editable in place. Uses the same storage as the Preferences tab.
+struct ChargingPreferencesCard: View {
+    @AppStorage(ChargerConnector.ccs.storageKey) private var includesCCS = true
+    @AppStorage(ChargerConnector.nacs.storageKey) private var includesNACS = true
+    @AppStorage(ChargerConnector.chademo.storageKey) private var includesCHAdeMO = true
+    private let values = SearchPreferenceValues()
+
+    var body: some View {
+        PreferenceCard(title: "Charging needs") {
+            Menu {
+                // At least one connector stays selected, as in Preferences.
+                Toggle(ChargerConnector.ccs.title, isOn: $includesCCS)
+                    .disabled(includesCCS && !includesNACS && !includesCHAdeMO)
+                Toggle(ChargerConnector.nacs.title, isOn: $includesNACS)
+                    .disabled(includesNACS && !includesCCS && !includesCHAdeMO)
+                Toggle(ChargerConnector.chademo.title, isOn: $includesCHAdeMO)
+                    .disabled(includesCHAdeMO && !includesCCS && !includesNACS)
+            } label: {
+                PreferenceRowLabel(title: "Connector", value: values.connectors, systemImage: "powerplug", isEditable: true)
+            }
+            .buttonStyle(.plain)
+            PreferenceDivider()
+            PreferenceRowLabel(title: "Network", value: SearchPreferenceValues.unfiltered, systemImage: "network")
+            PreferenceDivider()
+            PreferenceRowLabel(title: "Speed", value: SearchPreferenceValues.unfiltered, systemImage: "bolt.fill")
+        }
+    }
+}
+
+private struct PreferenceCard<Rows: View>: View {
+    let title: LocalizedStringKey
+    @ViewBuilder let rows: Rows
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .font(.headline)
                 .padding(.bottom, 8)
-
-            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                preferenceRow(row.0, value: row.1, systemImage: row.2)
-                if index < rows.count - 1 {
-                    Divider().padding(.leading, 32)
-                }
-            }
+            rows
         }
         .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
     }
+}
 
-    private func preferenceRow(
-        _ title: LocalizedStringKey,
-        value: String,
-        systemImage: String
-    ) -> some View {
-        Button {} label: {
-            HStack(spacing: 12) {
-                Label(title, systemImage: systemImage)
-                    .foregroundStyle(.primary)
-                Spacer()
-                Text(value)
-                    .foregroundStyle(.secondary)
-                Image(systemName: "chevron.right")
+private struct PreferenceDivider: View {
+    var body: some View { Divider().padding(.leading, 32) }
+}
+
+/// One preference row. Editable rows show a menu indicator; rows for filters
+/// that don't exist yet are plain text.
+private struct PreferenceRowLabel: View {
+    let title: LocalizedStringKey
+    let value: String
+    let systemImage: String
+    var isEditable = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Label(title, systemImage: systemImage)
+                .foregroundStyle(.primary)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+            if isEditable {
+                Image(systemName: "chevron.up.chevron.down")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -338,7 +478,7 @@ struct SelectedDestinationPanel: View {
     let subtitle: String?
     let distance: String
     let driveTime: String
-    let maximumWalkingMinutes: Int
+    private let values = SearchPreferenceValues()
     let onRoute: () -> Void
     let onNearbyChargers: () -> Void
 
@@ -370,7 +510,7 @@ struct SelectedDestinationPanel: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Target Stop Window")
                         .font(.headline)
-                    Text("100–150 miles applied")
+                    Text(values.stopWindow)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -378,7 +518,7 @@ struct SelectedDestinationPanel: View {
                 .padding(14)
                 .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
 
-                SearchPreferenceSections(maximumWalkingMinutes: maximumWalkingMinutes)
+                SearchPreferenceSections()
             }
             .padding(16)
         }

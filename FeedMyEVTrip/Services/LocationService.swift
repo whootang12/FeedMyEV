@@ -12,6 +12,9 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        // Start from the system's last known fix so a screen isn't empty while
+        // a new request is in flight.
+        location = manager.location
     }
 
     func requestCurrentLocation() {
@@ -39,10 +42,15 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        location = locations.last
+        guard let latest = locations.last else { return }
+        location = latest
+        errorMessage = nil
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // `locationUnknown` is transient. A one-shot request often reports it
+        // right after delivering a location; Core Location keeps trying.
+        if (error as? CLError)?.code == .locationUnknown { return }
         errorMessage = "Your current location couldn’t be determined. Please try again."
     }
 }

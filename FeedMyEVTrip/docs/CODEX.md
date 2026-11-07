@@ -31,6 +31,8 @@ Preferences for AI assistants working in this repository. Read this before makin
 
 ## Log
 
+- 2026-11-07: The target stop window defaults to hours and steps by 0.5 hours. Miles remain available. Preference rows in the search drawer edit their setting in place; rows for filters that don't exist yet are plain text.
+
 - 2026-10-03: Style View details like the Apple Maps Website action: a rounded, lightly tinted button with a blue icon above its label.
 
 - 2026-10-03: Closing charger details returns to the previous position in the results list and restores the results drawer height, as well as the map region.

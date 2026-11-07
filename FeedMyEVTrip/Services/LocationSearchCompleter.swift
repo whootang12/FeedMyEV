@@ -4,6 +4,9 @@ import MapKit
 struct LocationSearchSuggestion: Identifiable, Equatable {
     let title: String
     let subtitle: String
+    /// The MapKit completion this suggestion came from. Resolving it directly
+    /// returns the place the person chose instead of re-searching the text.
+    var completion: MKLocalSearchCompletion? = nil
 
     var id: String { "\(title)|\(subtitle)" }
     var query: String { subtitle.isEmpty ? title : "\(title), \(subtitle)" }
@@ -40,11 +43,11 @@ final class LocationSearchCompleter: NSObject, ObservableObject, MKLocalSearchCo
     }
 
     nonisolated func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
-        let suggestions = completer.results.prefix(12).map {
-            LocationSearchSuggestion(title: $0.title, subtitle: $0.subtitle)
-        }
-        Task { @MainActor in
-            self.suggestions = suggestions
+        // MKLocalSearchCompleter calls its delegate on the main thread.
+        MainActor.assumeIsolated {
+            self.suggestions = completer.results.prefix(12).map {
+                LocationSearchSuggestion(title: $0.title, subtitle: $0.subtitle, completion: $0)
+            }
         }
     }
 

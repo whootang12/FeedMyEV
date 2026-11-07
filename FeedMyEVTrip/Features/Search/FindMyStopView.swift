@@ -25,12 +25,16 @@ struct FindMyStopView: View {
 
     @Query private var savedStops: [SavedStop]
     @StateObject private var service = RouteStopService()
-    @StateObject private var locationService = LocationService()
+    /// Shared with the search screen so the route form starts with its location.
+    @ObservedObject var locationService: LocationService
     @AppStorage("route.origin") private var origin = ""
     @Binding var destination: String
-    @AppStorage("route.windowUnit") private var unit: StopWindowUnit = .miles
-    @AppStorage("route.windowLower") private var lower = 100.0
-    @AppStorage("route.windowUpper") private var upper = 150.0
+    /// The place chosen from suggestions, with the name that was put in the
+    /// destination field. Used until the person edits that field.
+    var resolvedDestination: (name: String, place: SearchPlace)? = nil
+    @AppStorage(RouteWindowSettings.unitKey) private var unit = RouteWindowSettings.defaultUnit
+    @AppStorage(RouteWindowSettings.lowerKey) private var lower = RouteWindowSettings.defaultLower
+    @AppStorage(RouteWindowSettings.upperKey) private var upper = RouteWindowSettings.defaultUpper
     @AppStorage("route.maximumDetour") private var maximumDetour = 20.0
     @AppStorage(FoodPreferenceKeys.maximumWalkingMinutes) private var maximumWalkingMinutes = 15
     @State private var selectedTab = RouteTab.driving
@@ -51,17 +55,11 @@ struct FindMyStopView: View {
                     drivingContent
                 case .restaurants:
                     VStack(spacing: 14) {
-                        preferenceCard(
-                            title: "Restaurant preferences",
-                            rows: [("Cuisine", "All"), ("Restaurants", "All")]
-                        )
+                        RestaurantPreferencesCard(includesWalking: false)
                         walkingCard
                     }
                 case .charging:
-                    preferenceCard(
-                        title: "Charging needs",
-                        rows: [("Connector", "All"), ("Network", "All"), ("Speed", "150+ kW")]
-                    )
+                    ChargingPreferencesCard()
                 }
 
                 if let errorMessage {
@@ -88,6 +86,9 @@ struct FindMyStopView: View {
                 }
             }
             .padding().background(.regularMaterial)
+        }
+        .onAppear {
+            if locationService.location == nil { locationService.requestCurrentLocation() }
         }
         .onDisappear(perform: cancel)
     }
@@ -136,8 +137,8 @@ struct FindMyStopView: View {
             DisclosureGroup(isExpanded: $isStopWindowExpanded) {
                 VStack(alignment: .leading, spacing: 14) {
                     Picker("Range unit", selection: $unit) {
-                        Text("Miles").tag(StopWindowUnit.miles)
                         Text("Hours").tag(StopWindowUnit.minutes)
+                        Text("Miles").tag(StopWindowUnit.miles)
                     }
                     .pickerStyle(.segmented)
                     .onChange(of: unit) { _, newUnit in
@@ -145,8 +146,8 @@ struct FindMyStopView: View {
                             lower = 100
                             upper = 150
                         } else {
-                            lower = 90
-                            upper = 150
+                            lower = RouteWindowSettings.defaultLower
+                            upper = RouteWindowSettings.defaultUpper
                         }
                     }
 
@@ -229,55 +230,29 @@ struct FindMyStopView: View {
         }
     }
 
-    private func preferenceCard(
-        title: LocalizedStringKey,
-        rows: [(LocalizedStringKey, LocalizedStringKey)]
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title).font(.headline).padding(.bottom, 8)
-            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                Button {} label: {
-                    HStack {
-                        Text(row.0).foregroundStyle(.primary)
-                        Spacer()
-                        Text(row.1).foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.vertical, 12)
-                }
-                .buttonStyle(.plain)
-                if index < rows.count - 1 { Divider() }
-            }
-        }
-        .padding(14)
-        .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
-    }
-
     private var rangeIncrement: Double { unit == .miles ? 25 : 30 }
 
     private var stopWindowSummary: String {
-        if unit == .miles {
-            return "\(Int(lower))–\(Int(upper)) miles applied"
-        }
-        return "\(formattedRangeValue(lower))–\(formattedRangeValue(upper)) hours applied"
+        SearchPreferenceValues.stopWindowDescription(unit: unit, lower: lower, upper: upper)
     }
 
     private func formattedRangeValue(_ value: Double) -> String {
         if unit == .miles { return value.formatted(.number.precision(.fractionLength(0))) }
-        return (value / 60).formatted(.number.precision(.fractionLength(1)))
+        return (value / 60).formatted(.number.precision(.fractionLength(0...1)))
     }
 
     private func search() {
         isSearching = true
         errorMessage = nil
+        let destinationQuery = destination.trimmingCharacters(in: .whitespacesAndNewlines)
+        let destinationPlace = resolvedDestination?.name == destinationQuery ? resolvedDestination?.place : nil
         searchTask = Task {
             do {
                 let result = try await service.find(
                     originQuery: origin.trimmingCharacters(in: .whitespacesAndNewlines),
                     location: locationService.location,
-                    destinationQuery: destination.trimmingCharacters(in: .whitespacesAndNewlines),
+                    destinationQuery: destinationQuery,
+                    destinationPlace: destinationPlace,
                     window: StopWindow(unit: unit, lower: lower, upper: upper),
                     maximumDetour: maximumDetour,
                     savedChargers: savedStops.map { ChargerResult(savedStop: $0) }

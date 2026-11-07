@@ -101,7 +101,7 @@ final class RouteStopService: ObservableObject {
     }
 
     func find(originQuery: String, location: CLLocation?, destinationQuery: String,
-              window: StopWindow, maximumDetour: Double, savedChargers: [ChargerResult]) async throws -> RouteStopResults {
+              destinationPlace: SearchPlace? = nil, window: StopWindow, maximumDetour: Double, savedChargers: [ChargerResult]) async throws -> RouteStopResults {
         progress = "Loading charger catalog…"
         let catalog = try await AFDCChargerProvider.shared.loadChargers()
         try Task.checkCancellation()
@@ -116,7 +116,13 @@ final class RouteStopService: ObservableObject {
             }
             origin = found.mapItem
         }
-        guard let destination = try await places.resolveDestination(destinationQuery) else {
+        let resolvedDestination: SearchPlace?
+        if let destinationPlace {
+            resolvedDestination = destinationPlace
+        } else {
+            resolvedDestination = try await places.resolveDestination(destinationQuery)
+        }
+        guard let destination = resolvedDestination else {
             throw RouteFailure.message("Couldn’t find your destination.")
         }
         let route = try await drivingRoute(from: origin, to: destination.mapItem)
